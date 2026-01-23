@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LoginProvider {
+  GOOGLE
+  NORMAL
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  name      String
+  password  String?
+
+  googleId  String?  @unique
+  picture   String?
+
+  last_login_with LoginProvider?
+  last_login_at   DateTime?
+
+  email_verified Boolean @default(false)
+  email_verified_at DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  otps Otp[]
+}
+
+model Otp {
+  id        String   @id @default(cuid())
+  code      String
+  type      OtpType
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, type])
+}
