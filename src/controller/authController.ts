@@ -8,6 +8,8 @@ import { ALLOWED_EMAIL_DOMAIN } from "../schemas/auth.schema.js";
 
 const isMivaEmail = (email: string) => email.endsWith(ALLOWED_EMAIL_DOMAIN);
 
+// Create Manual GET & POST endpoints for normal OAuth screens
+
 // GOOGLE AUTH
 export const googleAuth = async (req: Request, res: Response) => {
   try {

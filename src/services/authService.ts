@@ -2,7 +2,7 @@ import { OAuth2Client } from "google-auth-library";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
-import { LoginProvider } from "../generated/prisma/client.js";
+import { LoginProvider } from "@prisma/client";
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
