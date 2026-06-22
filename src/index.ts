@@ -45,10 +45,10 @@ app.get("/", (_req, res) => {
 });
 
 // Health check
-app.get("/health", (_req, res) => {
-  res.json({
-    message: "Miva Hubble API",
-    status: "running",
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "Miva Hubble API",
   });
 });
 

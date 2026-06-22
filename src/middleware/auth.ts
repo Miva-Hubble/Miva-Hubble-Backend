@@ -9,21 +9,36 @@ export interface AuthRequest extends Request {
   };
 }
 
-export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
+
+export const authenticate = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
-    // Check for token in Authorization header or cookies
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : req.cookies?.accessToken;
+
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : req.cookies?.accessToken;
 
     if (!token) {
-      return res.status(HttpStatus.UNAUTHORIZED).json({ error: "No token provided" });
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "No token provided" });
     }
 
-    // Verify token
-    const decoded = AuthService.verifyAccessToken(token) as { userId: string; email: string };
+    const decoded = AuthService.verifyAccessToken(token) as {
+      userId: string;
+      email: string;
+    };
+
     req.user = decoded;
+
     next();
-  } catch (error) {
-    return res.status(HttpStatus.UNAUTHORIZED).json({ error: "Invalid or expired token" });
+  } catch {
+    return res
+      .status(HttpStatus.UNAUTHORIZED)
+      .json({ error: "Invalid or expired token" });
   }
 };
