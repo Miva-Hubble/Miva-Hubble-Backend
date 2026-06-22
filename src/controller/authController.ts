@@ -248,7 +248,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
     const { email } = req.body;
 
     const user = await prisma.user.findUnique({ where: { email } });
-
+    
     // Always return success to prevent email enumeration
     if (!user) {
       return res.status(HttpStatus.OK).json({ success: true, message: "If the email exists, an OTP has been sent" });

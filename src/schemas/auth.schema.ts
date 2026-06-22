@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 export const ALLOWED_EMAIL_DOMAIN = "@miva.edu.ng";
-
-const mivaEmail = z.email("Invalid email address").refine((email) => email.endsWith(ALLOWED_EMAIL_DOMAIN), {
-  message: "Only Miva student emails (@miva.edu.ng) are allowed",
-});
+export const isMivaEmail = (email: string) => {
+  const mivaEmailRegex = /^.+@miva\.edu\.ng$/;
+  return mivaEmailRegex.test(email);
+};
 
 export const GoogleTokenSchema = z.object({
   credential: z.string(),
@@ -26,7 +26,7 @@ export type GoogleUser = z.infer<typeof GoogleUserSchema>;
 export const RegisterSchema = z.object({
   name: z.string().min(1, "Name is required"),
   username: z.string(),
-  email: mivaEmail,
+  email: z.string().email().refine(isMivaEmail, { message: "Only Miva emails allowed" }),
   password: z
     .string()
     .min(8, "Password must be at least 8 characters long")
@@ -37,16 +37,16 @@ export const RegisterSchema = z.object({
 });
 
 export const LoginSchema = z.object({
-  email: mivaEmail,
+  email: z.string().email().refine(isMivaEmail, { message: "Only Miva emails allowed" }),
   password: z.string(),
 });
 
 export const ForgotPasswordSchema = z.object({
-  email: mivaEmail,
+  email: z.string().email().refine(isMivaEmail, { message: "Only Miva emails allowed" }),
 });
 
 export const VerifyOtpSchema = z.object({
-  email: mivaEmail,
+  email: z.string().email().refine(isMivaEmail, { message: "Only Miva emails allowed" }),
   otp: z.string().length(6, "OTP must be 6 digits"),
 });
 
