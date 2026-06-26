@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { googleAuth, register, login, verifyEmailOtp, forgotPassword, verifyResetOtp, resetPassword } from "../controller/authController.js";
-import { initiateGoogleAuth, handleGoogleCallback, handleGoogleCallbackPopup, exchangeGoogleCode } from "../controller/googleOAuthController.js";
+import { initiateGoogleAuth, handleGoogleCallback, handleGoogleCallbackPopup, exchangeGoogleCode, refreshAuthToken } from "../controller/googleOAuthController.js";
 import { validate } from "../middleware/validate.js";
 import { GoogleTokenSchema, RegisterSchema, LoginSchema, VerifyOtpSchema, ForgotPasswordSchema, ResetPasswordSchema } from "../schemas/auth.schema.js";
 
@@ -11,6 +11,7 @@ router.get("/google", initiateGoogleAuth); // Step 1: Get auth URL
 router.get("/google/callback", handleGoogleCallback); // Step 2: Handle callback from Google
 router.get("/google/callback-popup", handleGoogleCallbackPopup); // Alternative: Popup window flow
 router.post("/google/token", exchangeGoogleCode); // Alternative: Exchange code manually
+router.post("/refresh", refreshAuthToken);         // Renew expired accessToken via refreshToken cookie
 
 // Client-side Google Sign-In (legacy)
 // router.post("/google", validate(GoogleTokenSchema), googleAuth);

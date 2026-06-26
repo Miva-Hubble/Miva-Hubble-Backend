@@ -102,7 +102,7 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -207,56 +207,26 @@ export const handleGoogleCallbackPopup = async (
     const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
     const { data: userInfo } = await oauth2.userinfo.get();
 
+    const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
+
     if (!userInfo.email || !isMivaEmail(userInfo.email)) {
       return res.send(`
         <script>
-          window.opener.postMessage({ error: 'Only Miva emails allowed' }, '*');
+          window.opener.postMessage({ error: 'Only Miva emails allowed' }, '${frontendOrigin}');
           window.close();
         </script>
       `);
     }
 
-    // Create/update user (same logic)
-    let user = await prisma.user.findFirst({
-      where: { OR: [{ email: userInfo.email }, { googleId: userInfo.id }] },
-    });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: userInfo.email,
-          username: userInfo.email.split("@")[0],
-          name: userInfo.name || "",
-          googleId: userInfo.id,
-          picture: userInfo.picture,
-          email_verified: userInfo.verified_email ?? false,
-          email_verified_at: userInfo.verified_email ? new Date() : null,
-          last_login_with: "GOOGLE",
-          last_login_at: new Date(),
-        },
-      });
-    } else {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          googleId: userInfo.id,
-          picture: userInfo.picture,
-          email_verified: userInfo.verified_email ?? user.email_verified,
-          email_verified_at: userInfo.verified_email
-            ? new Date()
-            : user.email_verified_at,
-          last_login_with: "GOOGLE",
-          last_login_at: new Date(),
-        },
-      });
-    }
+    // ✅ STEP 3: Upsert user via shared service
+    const user = await upsertGoogleUser(userInfo);
 
     const { accessToken, refreshToken } = AuthService.generateTokens(
       user.id,
       user.email,
     );
 
-    // Send tokens to parent window via postMessage
+    // Send tokens to parent window via postMessage (scoped to frontend origin)
     res.send(`
       <script>
         window.opener.postMessage({
@@ -269,17 +239,77 @@ export const handleGoogleCallbackPopup = async (
             name: user.name,
             picture: user.picture,
           })}
-        }, '*');
+        }, '${frontendOrigin}');
         window.close();
       </script>
     `);
   } catch (error) {
     console.error("Google popup callback error:", error);
+    const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
     res.send(`
       <script>
-        window.opener.postMessage({ error: 'Authentication failed' }, '*');
+        window.opener.postMessage({ error: 'Authentication failed' }, '${frontendOrigin}');
         window.close();
       </script>
     `);
+  }
+};
+
+/**
+ * POST /api/auth/refresh
+ * Issues a new accessToken (+ rotates refreshToken) from a valid refreshToken cookie.
+ */
+export const refreshAuthToken = async (req: Request, res: Response) => {
+  try {
+    const token = req.cookies?.refreshToken;
+
+    if (!token) {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "No refresh token provided" });
+    }
+
+    let payload: { userId: string };
+    try {
+      payload = AuthService.verifyRefreshToken(token) as { userId: string };
+    } catch {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "Invalid or expired refresh token" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+    if (!user) {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "User not found" });
+    }
+
+    // Rotate both tokens
+    const { accessToken, refreshToken } = AuthService.generateTokens(user.id, user.email);
+
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 15 * 60 * 1000, // 15 min
+    });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return res.status(HttpStatus.OK).json({
+      success: true,
+      accessToken,
+    });
+  } catch (error) {
+    console.error("Token refresh error:", error);
+    return res
+      .status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .json({ error: "Token refresh failed" });
   }
 };

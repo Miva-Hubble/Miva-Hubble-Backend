@@ -7,6 +7,24 @@ import userRoutes from "./routes/user.js";
 
 dotenv.config();
 
+// Fail fast in production if critical env vars are missing
+if (process.env.NODE_ENV === "production") {
+  const REQUIRED_ENV_VARS = [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_REDIRECT_URI",
+    "FRONTEND_URL",
+    "ACCESS_TOKEN_SECRET",
+    "REFRESH_TOKEN_SECRET",
+  ];
+
+  const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    console.error(`❌ Missing required environment variables: ${missing.join(", ")}`);
+    process.exit(1);
+  }
+}
+
 const app = express();
 const PORT = process.env.PORT || 7292;
 
