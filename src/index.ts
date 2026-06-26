@@ -12,13 +12,16 @@ if (process.env.NODE_ENV === "production") {
   const REQUIRED_ENV_VARS = [
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
-    "GOOGLE_REDIRECT_URI",
     "FRONTEND_URL",
     "ACCESS_TOKEN_SECRET",
     "REFRESH_TOKEN_SECRET",
   ];
 
   const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
+  if (!process.env.GOOGLE_REDIRECT_URI && !process.env.GOOGLE_CALLBACK_URL) {
+    missing.push("GOOGLE_REDIRECT_URI or GOOGLE_CALLBACK_URL");
+  }
+
   if (missing.length > 0) {
     console.error(`❌ Missing required environment variables: ${missing.join(", ")}`);
     process.exit(1);
