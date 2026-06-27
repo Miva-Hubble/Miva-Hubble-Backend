@@ -84,7 +84,11 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     }
 
     // ✅ STEP 4: UPSERT USER (NEW SERVICE)
-    
+    const existingUser = await prisma.user.findUnique({
+      where: { email: userInfo.email },
+    });
+    const isNewUser = !existingUser;
+
     const user = await upsertGoogleUser(userInfo);
 
     // ✅ STEP 5: GENERATE TOKENS
@@ -111,7 +115,9 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     // ✅ STEP 7: REDIRECT
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 
-    return res.redirect(`${frontendUrl}/auth/callback?success=true`);
+    return res.redirect(
+      `${frontendUrl}/auth/callback?success=true&isNewUser=${isNewUser}`
+    );
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Authentication failed" });
