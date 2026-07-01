@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma.js";
-import { OtpType } from "@prisma/client";
+import { OtpType } from "../generated/prisma/index.js";
 
 const OTP_EXPIRY_MINUTES = 10;
 

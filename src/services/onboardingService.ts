@@ -2,7 +2,7 @@
 
 import { prisma } from "../lib/prisma.js";
 import { eventEmitter } from "../events/eventEmitter.js";
-import { PreferredMode } from "@prisma/client";
+import { PreferredMode } from "../generated/prisma/index.js";
 import type { OnboardingDto } from "../schemas/validations/onboarding.schema.js";
 
 const toPreferredMode = (mode: OnboardingDto["preferredMode"]): PreferredMode =>
