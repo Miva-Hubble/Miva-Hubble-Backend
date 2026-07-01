@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -14,6 +15,11 @@ enum LoginProvider {
 enum OtpType {
   EMAIL_VERIFICATION
   PASSWORD_RESET
+}
+
+enum PreferredMode {
+  ANONYMOUS
+  IDENTIFIED
 }
 
 model User {
@@ -35,7 +41,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  otps Otp[]
+  otps       Otp[]
+  onboarding Onboarding?
 }
 
 model Otp {
@@ -51,4 +58,15 @@ model Otp {
   createdAt DateTime @default(now())
 
   @@index([userId, type])
+}
+model Onboarding {
+  id            String        @id @default(cuid())
+  level         String
+  department    String
+  goals         String[]
+  preferredMode PreferredMode @default(ANONYMOUS)
+  completedAt   DateTime      @default(now())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

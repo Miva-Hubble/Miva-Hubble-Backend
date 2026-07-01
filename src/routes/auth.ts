@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { googleAuth, register, login, verifyEmailOtp, forgotPassword, verifyResetOtp, resetPassword } from "../controller/authController.js";
-import { initiateGoogleAuth, handleGoogleCallback, handleGoogleCallbackPopup, exchangeGoogleCode, refreshAuthToken } from "../controller/googleOAuthController.js";
+import { initiateGoogleAuth, handleGoogleCallback, handleGoogleCallbackPopup, exchangeGoogleCode, refreshAuthToken, getDebugToken } from "../controller/googleOAuthController.js";
 import { validate } from "../middleware/validate.js";
+import { devOnly } from "../middleware/devOnly.js";
 import { GoogleTokenSchema, RegisterSchema, LoginSchema, VerifyOtpSchema, ForgotPasswordSchema, ResetPasswordSchema } from "../schemas/auth.schema.js";
 
 const router = Router();
@@ -12,6 +13,7 @@ router.get("/google/callback", handleGoogleCallback); // Step 2: Handle callback
 router.get("/google/callback-popup", handleGoogleCallbackPopup); // Alternative: Popup window flow
 router.post("/google/token", exchangeGoogleCode); // Alternative: Exchange code manually
 router.post("/refresh", refreshAuthToken);         // Renew expired accessToken via refreshToken cookie
+router.get("/debug/token", devOnly, getDebugToken); // Dev-only: expose session tokens for Postman testing
 
 // Client-side Google Sign-In (legacy)
 // router.post("/google", validate(GoogleTokenSchema), googleAuth);

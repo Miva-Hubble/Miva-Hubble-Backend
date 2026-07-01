@@ -6,6 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "check:onboarding": "node scripts/check-onboarding-api.mjs",
+    "test:onboarding": "node scripts/test-onboarding-live.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {

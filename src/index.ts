@@ -4,6 +4,10 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
+import onboardingRoutes from "./routes/onboarding.route.js";
+import "./events/onboarding.listener.js";
+import { errorHandler } from "./middleware/error.js";
+// app.ts
 
 dotenv.config();
 
@@ -23,7 +27,9 @@ if (process.env.NODE_ENV === "production") {
   }
 
   if (missing.length > 0) {
-    console.error(`❌ Missing required environment variables: ${missing.join(", ")}`);
+    console.error(
+      `❌ Missing required environment variables: ${missing.join(", ")}`,
+    );
     process.exit(1);
   }
 }
@@ -32,7 +38,9 @@ const app = express();
 const PORT = process.env.PORT || 7292;
 
 // Parse allowed origins from environment variable
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || ["http://localhost:3000"];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
+  "http://localhost:3000",
+];
 
 // Middleware
 app.use(
@@ -56,6 +64,7 @@ app.use(cookieParser());
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/onboarding", onboardingRoutes);
 
 // Health check
 app.get("/", (_req, res) => {
@@ -72,6 +81,8 @@ app.get("/health", (req, res) => {
     service: "Miva Hubble API",
   });
 });
+
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

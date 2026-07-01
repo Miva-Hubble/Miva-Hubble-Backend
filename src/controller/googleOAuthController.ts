@@ -264,6 +264,64 @@ export const handleGoogleCallbackPopup = async (
 };
 
 /**
+ * GET /api/auth/debug/token
+ * Development-only: returns the current session tokens and user for Postman/API testing.
+ * Complete OAuth in the browser first so cookies are set, then call this endpoint.
+ */
+export const getDebugToken = async (req: Request, res: Response) => {
+  try {
+    const accessToken =
+      req.cookies?.accessToken ??
+      (req.headers.authorization?.startsWith("Bearer ")
+        ? req.headers.authorization.substring(7)
+        : undefined);
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (!accessToken) {
+      return res.status(HttpStatus.UNAUTHORIZED).json({
+        error:
+          "No access token found. Complete Google OAuth in the browser first.",
+      });
+    }
+
+    let payload: { userId: string; email: string };
+    try {
+      payload = AuthService.verifyAccessToken(accessToken) as {
+        userId: string;
+        email: string;
+      };
+    } catch {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "Invalid or expired access token" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, email: true, name: true, picture: true },
+    });
+
+    if (!user) {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "User not found" });
+    }
+
+    return res.status(HttpStatus.OK).json({
+      success: true,
+      accessToken,
+      ...(refreshToken && { refreshToken }),
+      user,
+    });
+  } catch (error) {
+    console.error("Debug token error:", error);
+    return res
+      .status(HttpStatus.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to read debug token" });
+  }
+};
+
+/**
  * POST /api/auth/refresh
  * Issues a new accessToken (+ rotates refreshToken) from a valid refreshToken cookie.
  */
