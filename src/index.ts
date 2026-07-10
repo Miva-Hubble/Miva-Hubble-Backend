@@ -1,15 +1,15 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
 import onboardingRoutes from "./routes/onboarding.route.js";
+import adminRoutes from "./routes/admin.js";
+import storageRoutes from "./routes/storage.js";
 import "./events/onboarding.listener.js";
 import { errorHandler } from "./middleware/error.js";
 // app.ts
-
-dotenv.config();
 
 // Fail fast in production if critical env vars are missing
 if (process.env.NODE_ENV === "production") {
@@ -19,6 +19,10 @@ if (process.env.NODE_ENV === "production") {
     "FRONTEND_URL",
     "ACCESS_TOKEN_SECRET",
     "REFRESH_TOKEN_SECRET",
+    "ADMIN_ACCESS_TOKEN_SECRET",
+    "ADMIN_REFRESH_TOKEN_SECRET",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
   ];
 
   const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
@@ -65,6 +69,8 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/onboarding", onboardingRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/storage", storageRoutes);
 
 // Health check
 app.get("/", (_req, res) => {

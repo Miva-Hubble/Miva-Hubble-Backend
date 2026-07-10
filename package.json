@@ -8,6 +8,7 @@
     "start": "node dist/index.js",
     "check:onboarding": "node scripts/check-onboarding-api.mjs",
     "test:onboarding": "node scripts/test-onboarding-live.mjs",
+    "seed:admin": "node scripts/seed-admin.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {

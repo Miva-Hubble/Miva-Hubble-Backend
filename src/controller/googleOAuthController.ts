@@ -116,7 +116,7 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 
     return res.redirect(
-      `${frontendUrl}/auth/callback?success=true&isNewUser=${isNewUser}`
+      `${frontendUrl}/auth-callback?success=true&isNewUser=${isNewUser}`
     );
   } catch (error) {
     console.error(error);

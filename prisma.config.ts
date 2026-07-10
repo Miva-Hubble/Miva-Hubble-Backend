@@ -7,6 +7,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    // CLI-only (migrate/generate/studio). Runtime PrismaClient in src/lib/prisma.ts
+    // uses DATABASE_URL (pooled) separately via the pg adapter — unaffected by this.
+    url: env("DIRECT_URL"),
   },
 });

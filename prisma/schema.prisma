@@ -4,21 +4,63 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public"]
 }
 
 enum LoginProvider {
   GOOGLE
   NORMAL
+
+  @@schema("public")
 }
 
 enum OtpType {
   EMAIL_VERIFICATION
   PASSWORD_RESET
+
+  @@schema("public")
 }
 
 enum PreferredMode {
   ANONYMOUS
   IDENTIFIED
+
+  @@schema("public")
+}
+
+enum AdminStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+
+  @@schema("public")
+}
+
+enum AdminLoginEventType {
+  SUCCESS
+  FAILED_NOT_FOUND
+  FAILED_PASSWORD
+  FAILED_STATUS
+  FAILED_LOCKED
+
+  @@schema("public")
+}
+
+enum BookType {
+  TEXTBOOK
+  PAST_QUESTION
+  STUDY_GUIDE
+  REFERENCE
+
+  @@schema("public")
+}
+
+enum BookStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@schema("public")
 }
 
 model User {
@@ -42,6 +84,9 @@ model User {
 
   otps       Otp[]
   onboarding Onboarding?
+  files      UserFile[]
+
+  @@schema("public")
 }
 
 model Otp {
@@ -57,6 +102,7 @@ model Otp {
   createdAt DateTime @default(now())
 
   @@index([userId, type])
+  @@schema("public")
 }
 model Onboarding {
   id            String        @id @default(cuid())
@@ -68,4 +114,103 @@ model Onboarding {
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Admin Auth
+// ---------------------------------------------------------------------------
+
+model Admin {
+  id       String      @id @default(cuid())
+  name     String
+  email    String      @unique
+  password String
+  status   AdminStatus @default(ACTIVE)
+
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions    AdminSession[]
+  loginEvents AdminLoginEvent[]
+
+  @@schema("public")
+}
+
+model AdminSession {
+  id               String    @id @default(cuid())
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ip               String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  adminId String
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@schema("public")
+}
+
+model AdminLoginEvent {
+  id        String              @id @default(cuid())
+  email     String
+  type      AdminLoginEventType
+  ip        String?
+  userAgent String?
+  createdAt DateTime            @default(now())
+
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([email])
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Storage: private student files + admin-curated library books
+// ---------------------------------------------------------------------------
+
+// A private file owned by a single student. `storageObjectId` points at the
+// row Supabase Storage itself created in `storage.objects` for the physical
+// upload (see the custom SQL migration for the cross-schema FK).
+model UserFile {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storageObjectId String   @unique @map("storage_object_id") @db.Uuid
+  customLabel     String?  @map("custom_label")
+  isArchived      Boolean  @default(false) @map("is_archived")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("user_files")
+  @@schema("public")
+}
+
+// An admin-curated library resource. Targeting fields (level/department/tags)
+// drive the personalized feed in StorageService.getPersonalizedFeed.
+model Book {
+  id              String     @id @default(uuid()) @db.Uuid
+  storageObjectId String     @unique @map("storage_object_id") @db.Uuid
+  title           String
+  author          String
+  description     String?
+  level           String // Level100-Level500, or "All"
+  department      String // e.g. "Computer Science", or "All"
+  bookType        BookType   @map("book_type")
+  status          BookStatus @default(DRAFT)
+  tags            String[]   @default([])
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  @@map("books")
+  @@schema("public")
 }
