@@ -16,9 +16,9 @@ export class AdminAuthService {
     process.env.ADMIN_REFRESH_TOKEN_SECRET || "admin-refresh-secret";
 
   static readonly ACCESS_TOKEN_EXPIRY: jwt.SignOptions["expiresIn"] = "15m";
-  static readonly REFRESH_TOKEN_EXPIRY: jwt.SignOptions["expiresIn"] = "7d";
+  static readonly REFRESH_TOKEN_EXPIRY: jwt.SignOptions["expiresIn"] = "8h";
   static readonly ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
-  static readonly REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  static readonly REFRESH_TOKEN_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 hours — admin must re-login after this window
 
   // Account lockout policy
   static readonly MAX_LOGIN_ATTEMPTS = 5;
