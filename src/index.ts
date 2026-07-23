@@ -42,7 +42,7 @@ const app = express();
 const PORT = process.env.PORT || 7292;
 
 // Parse allowed origins from environment variable
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [
   "http://localhost:3000",
 ];
 

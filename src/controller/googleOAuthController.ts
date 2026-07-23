@@ -15,6 +15,12 @@ const oauth2Client = new google.auth.OAuth2(
     "http://localhost:7292/api/auth/google/callback",
 );
 
+// Helper to get the primary frontend URL (supporting comma-separated lists)
+const getFrontendUrl = (): string => {
+  const url = process.env.FRONTEND_URL || "http://localhost:3000";
+  return url.split(",")[0].trim();
+};
+
 /**
  * GET /api/auth/google
  * Initiates the OAuth flow by redirecting to Google's consent screen
@@ -77,7 +83,7 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
 
     // ✅ STEP 3: DOMAIN CHECK
     if (userInfo.email && !userInfo.email.endsWith("@miva.edu.ng")) {
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+      const frontendUrl = getFrontendUrl();
       return res.redirect(
         `${frontendUrl}/login?error=not_miva_student`
       );
@@ -98,22 +104,27 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     );
 
     // ✅ STEP 6: SET COOKIES
+    // SameSite=None + Secure is required for cross-origin cookie delivery in production
+    // (frontend on Vercel, backend on Render are treated as separate origins by browsers).
+    // Fallback to Lax/non-secure for local HTTP development.
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 15 * 60 * 1000,
     });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     // ✅ STEP 7: REDIRECT
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const frontendUrl = getFrontendUrl();
 
     return res.redirect(
       `${frontendUrl}/auth-callback?success=true&isNewUser=${isNewUser}`
@@ -215,7 +226,7 @@ export const handleGoogleCallbackPopup = async (
     const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
     const { data: userInfo } = await oauth2.userinfo.get();
 
-    const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
+    const frontendOrigin = getFrontendUrl();
 
     if (!userInfo.email || !isMivaEmail(userInfo.email)) {
       return res.send(`
@@ -253,7 +264,7 @@ export const handleGoogleCallbackPopup = async (
     `);
   } catch (error) {
     console.error("Google popup callback error:", error);
-    const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
+    const frontendOrigin = getFrontendUrl();
     res.send(`
       <script>
         window.opener.postMessage({ error: 'Authentication failed' }, '${frontendOrigin}');
@@ -354,17 +365,21 @@ export const refreshAuthToken = async (req: Request, res: Response) => {
     // Rotate both tokens
     const { accessToken, refreshToken } = AuthService.generateTokens(user.id, user.email);
 
+    // Must match the same sameSite/secure attributes as handleGoogleCallback so the
+    // browser treats the rotated cookie as the same identity.
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 15 * 60 * 1000, // 15 min
     });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 

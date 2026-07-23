@@ -72,10 +72,11 @@ export class AdminAuthService {
   }
 
   static cookieOptions(maxAge: number) {
+    const isProd = process.env.NODE_ENV === "production";
     return {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax" as const,
+      secure: isProd,
+      sameSite: (isProd ? "none" : "lax") as "none" | "lax",
       maxAge,
       path: "/",
     };

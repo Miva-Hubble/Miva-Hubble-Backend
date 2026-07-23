@@ -192,8 +192,18 @@ export const adminLogout = async (req: Request, res: Response) => {
       if (session) await AdminService.revokeSession(session.id);
     }
 
-    res.clearCookie("adminAccessToken", { path: "/" });
-    res.clearCookie("adminRefreshToken", { path: "/" });
+    // clearCookie must mirror the exact same sameSite/secure/path attributes used
+    // when the cookies were originally set — browsers silently ignore clears that don't match.
+    const isProd = process.env.NODE_ENV === "production";
+    const clearOpts = {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+      path: "/",
+    };
+
+    res.clearCookie("adminAccessToken", clearOpts);
+    res.clearCookie("adminRefreshToken", clearOpts);
 
     return res.status(HttpStatus.OK).json({ success: true, message: "Logged out" });
   } catch (error) {
