@@ -12,6 +12,7 @@ export const validate =
       next();
     } catch (error) {
       if (error instanceof ZodError) {
+        console.error("❌ Validation Error on", req.originalUrl, ":", JSON.stringify(error.flatten(), null, 2));
         return res.status(400).json({
           success: false,
           message: "Validation failed",
