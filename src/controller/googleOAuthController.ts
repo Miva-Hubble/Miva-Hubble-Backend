@@ -84,9 +84,8 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     // ✅ STEP 3: DOMAIN CHECK
     if (userInfo.email && !userInfo.email.endsWith("@miva.edu.ng")) {
       const frontendUrl = getFrontendUrl();
-      return res.redirect(
-        `${frontendUrl}/login?error=not_miva_student`
-      );
+      const baseUrl = frontendUrl.replace(/\/+$/, "");
+      return res.redirect(`${baseUrl}/?error=invalid_domain`);
     }
 
     // ✅ STEP 4: UPSERT USER (NEW SERVICE)
