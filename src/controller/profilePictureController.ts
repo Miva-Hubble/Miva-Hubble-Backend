@@ -8,6 +8,7 @@
 // Body:    multipart/form-data, field name "image"
 // Returns: { success: true, path: "userId/avatar.jpg" }
 
+import "multer";
 import { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth.js";
 import * as profilePictureService from "../services/profilePictureService.js";

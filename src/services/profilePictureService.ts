@@ -10,6 +10,7 @@
 //     This means re-uploading replaces the previous object cleanly (upsert: true),
 //     with no orphaned files accumulating in the bucket.
 
+import "multer";
 import { supabaseAdmin } from "../config/supabase.js";
 
 const PROFILE_IMAGES_BUCKET =
