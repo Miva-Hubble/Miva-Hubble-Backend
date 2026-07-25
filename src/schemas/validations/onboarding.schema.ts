@@ -13,6 +13,12 @@ export const onboardingSchema = z.object({
     )
     .optional()
     .default("anonymous"),
+  /**
+   * Optional storage path returned by POST /api/onboarding/profile-picture.
+   * This is a path string (e.g. "userId/avatar.jpg"), never a binary payload.
+   * Image validation is the upload endpoint's responsibility, not ours.
+   */
+  profilePicturePath: z.string().trim().min(1).optional(),
 });
 
-export type OnboardingDto = z.infer<typeof onboardingSchema>;
+export type OnboardingDto = z.infer<typeof onboardingSchema>;

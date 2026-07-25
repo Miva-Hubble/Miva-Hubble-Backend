@@ -71,7 +71,8 @@ model User {
   password  String?
 
   googleId  String?  @unique
-  picture   String?
+  picture            String?
+  profilePicturePath String?
 
   last_login_with LoginProvider?
   last_login_at   DateTime?

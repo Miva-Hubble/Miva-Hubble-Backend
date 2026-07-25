@@ -1,10 +1,11 @@
 // controllers/onboarding.controller.ts
 
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
+import type { AuthRequest } from "../middleware/auth.js";
 import * as onboardingService from "../services/onboardingService.js";
 
 export const completeOnboarding = async (
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction,
 ) => {
@@ -12,18 +13,22 @@ export const completeOnboarding = async (
     const userId = req.user?.userId;
     if (!userId) throw new Error("Unauthorized");
 
-    const user = await onboardingService.completeOnboarding(userId, req.body);
+    const { onboarding, profilePicturePath } = await onboardingService.completeOnboarding(
+      userId,
+      req.body,
+    );
 
     return res.status(200).json({
       success: true,
       message: "Onboarding completed successfully.",
       profile: {
-        level: user.level,
-        department: user.department,
-        goals: user.goals,
-        preferredMode: user.preferredMode.toLowerCase(),
+        level: onboarding.level,
+        department: onboarding.department,
+        goals: onboarding.goals,
+        preferredMode: onboarding.preferredMode.toLowerCase(),
+        profilePicturePath: profilePicturePath ?? null,
         isOnboarded: true,
-        onboardedAt: user.completedAt,
+        onboardedAt: onboarding.completedAt,
       },
     });
   } catch (error) {

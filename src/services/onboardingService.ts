@@ -32,7 +32,23 @@ export const completeOnboarding = async (
   }
 
   /**
-   * Create the onboarding record (1:1 with User)
+   * If a profile picture path was supplied (uploaded via POST /api/onboarding/profile-picture),
+   * persist it on the User record now. This is a user identity concern, not an onboarding concern —
+   * the Onboarding table never stores image data.
+   */
+  let profilePicturePath: string | null = user.profilePicturePath;
+
+  if (payload.profilePicturePath) {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { profilePicturePath: payload.profilePicturePath },
+    });
+    profilePicturePath = updatedUser.profilePicturePath;
+  }
+
+  /**
+   * Create the onboarding record (1:1 with User).
+   * Picture data lives on User, not here.
    */
   const onboarding = await prisma.onboarding.create({
     data: {
@@ -53,5 +69,5 @@ export const completeOnboarding = async (
     department: onboarding.department,
   });
 
-  return onboarding;
+  return { onboarding, profilePicturePath };
 };

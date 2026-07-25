@@ -23,6 +23,7 @@ if (process.env.NODE_ENV === "production") {
     "ADMIN_REFRESH_TOKEN_SECRET",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_PROFILE_IMAGES_BUCKET",
   ];
 
   const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
