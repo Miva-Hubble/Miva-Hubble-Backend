@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/authService.js";
 import { HttpStatus } from "../utils/httpStatus.js";
+import type { UploadedImageFile } from "../types/upload.types.js";
 
-export interface AuthRequest extends Request {
+export interface AuthRequest extends Omit<Request, "file"> {
   user?: {
     userId: string;
     email: string;
   };
-  file?: Express.Multer.File;
+  file?: UploadedImageFile;
 }
 
 

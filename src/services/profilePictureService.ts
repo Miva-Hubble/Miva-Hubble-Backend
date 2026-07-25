@@ -10,8 +10,8 @@
 //     This means re-uploading replaces the previous object cleanly (upsert: true),
 //     with no orphaned files accumulating in the bucket.
 
-import "multer";
 import { supabaseAdmin } from "../config/supabase.js";
+import type { UploadedImageFile } from "../types/upload.types.js";
 
 const PROFILE_IMAGES_BUCKET =
   process.env.SUPABASE_PROFILE_IMAGES_BUCKET || "profile-images";
@@ -34,7 +34,7 @@ const MIME_TO_EXT: Record<string, string> = {
  */
 export const uploadProfilePicture = async (
   userId: string,
-  file: Express.Multer.File,
+  file: UploadedImageFile,
 ): Promise<string> => {
   const ext = MIME_TO_EXT[file.mimetype];
   if (!ext) {

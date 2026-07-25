@@ -14,6 +14,7 @@ import { errorHandler } from "./middleware/error.js";
 // Fail fast in production if critical env vars are missing
 if (process.env.NODE_ENV === "production") {
   const REQUIRED_ENV_VARS = [
+    "DATABASE_URL",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "FRONTEND_URL",
@@ -23,6 +24,7 @@ if (process.env.NODE_ENV === "production") {
     "ADMIN_REFRESH_TOKEN_SECRET",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_STORAGE_BUCKET",
     "SUPABASE_PROFILE_IMAGES_BUCKET",
   ];
 
