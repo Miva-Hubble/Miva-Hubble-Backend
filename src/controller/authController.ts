@@ -5,6 +5,7 @@ import { MailService } from "../services/mailService.js";
 import prisma from "../lib/prisma.js";
 import { HttpStatus } from "../utils/httpStatus.js";
 import { ALLOWED_EMAIL_DOMAIN } from "../schemas/auth.schema.js";
+import { getUserProfile } from "../services/userService.js";
 
 const isMivaEmail = (email: string) => email.endsWith(ALLOWED_EMAIL_DOMAIN);
 
@@ -195,8 +196,17 @@ export const login = async (req: Request, res: Response) => {
     // 7. Generate JWT tokens
     const { accessToken, refreshToken } = AuthService.generateTokens(user.id, user.email);
 
-    // 8. Return success response with tokens
-    return res.status(HttpStatus.OK).json({ success: true, accessToken, refreshToken, message: "Login successful" });
+    // 8. Fetch full profile for onboarding state
+    const profile = await getUserProfile(user.id);
+
+    // 9. Return success response with tokens
+    return res.status(HttpStatus.OK).json({
+      success: true,
+      accessToken,
+      refreshToken,
+      isOnboarded: profile?.isOnboarded ?? false,
+      message: "Login successful",
+    });
   } catch (error) {
     console.error("Login error:", error);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: "Login failed" });
@@ -230,10 +240,14 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
     // Generate JWT tokens
     const { accessToken, refreshToken } = AuthService.generateTokens(user.id, user.email);
 
+    // Fetch full profile for onboarding state
+    const profile = await getUserProfile(user.id);
+
     return res.status(HttpStatus.OK).json({
       success: true,
       accessToken,
       refreshToken,
+      isOnboarded: profile?.isOnboarded ?? false,
       message: "Email verified successfully",
     });
   } catch (error) {

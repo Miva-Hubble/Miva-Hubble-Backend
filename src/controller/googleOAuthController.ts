@@ -4,7 +4,7 @@ import { AuthService } from "../services/authService.js";
 import prisma from "../lib/prisma.js";
 import { HttpStatus } from "../utils/httpStatus.js";
 import { isMivaEmail } from "../schemas/auth.schema.js";
-import { upsertGoogleUser } from "../services/userService.js";
+import { upsertGoogleUser, getUserProfile } from "../services/userService.js";
 
 // Initialize OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
@@ -96,6 +96,10 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
 
     const user = await upsertGoogleUser(userInfo);
 
+    // ✅ STEP 4b: FETCH FULL PROFILE (includes onboarding state)
+    const profile = await getUserProfile(user.id);
+    const isOnboarded = profile?.isOnboarded ?? false;
+
     // ✅ STEP 5: GENERATE TOKENS
     const { accessToken, refreshToken } = AuthService.generateTokens(
       user.id,
@@ -126,7 +130,7 @@ export const handleGoogleCallback = async (req: Request, res: Response) => {
     const frontendUrl = getFrontendUrl();
 
     return res.redirect(
-      `${frontendUrl}/auth-callback?success=true&isNewUser=${isNewUser}`
+      `${frontendUrl}/auth-callback?success=true&isNewUser=${isNewUser}&isOnboarded=${isOnboarded}`
     );
   } catch (error) {
     console.error(error);
@@ -174,6 +178,9 @@ export const exchangeGoogleCode = async (req: Request, res: Response) => {
     // ✅ STEP 5: UPSERT USER (REPLACES ALL OLD LOGIC)
     const user = await upsertGoogleUser(userInfo);
 
+    // ✅ STEP 5b: FETCH FULL PROFILE (includes onboarding state)
+    const profile = await getUserProfile(user.id);
+
     // ✅ STEP 6: Generate tokens
     const { accessToken, refreshToken } = AuthService.generateTokens(
       user.id,
@@ -190,6 +197,8 @@ export const exchangeGoogleCode = async (req: Request, res: Response) => {
         email: user.email,
         name: user.name,
         picture: user.picture,
+        isOnboarded: profile?.isOnboarded ?? false,
+        onboarding: profile?.onboarding ?? null,
       },
     });
   } catch (error) {
@@ -239,6 +248,9 @@ export const handleGoogleCallbackPopup = async (
     // ✅ STEP 3: Upsert user via shared service
     const user = await upsertGoogleUser(userInfo);
 
+    // ✅ STEP 3b: FETCH FULL PROFILE (includes onboarding state)
+    const profile = await getUserProfile(user.id);
+
     const { accessToken, refreshToken } = AuthService.generateTokens(
       user.id,
       user.email,
@@ -256,6 +268,7 @@ export const handleGoogleCallbackPopup = async (
             email: user.email,
             name: user.name,
             picture: user.picture,
+            isOnboarded: profile?.isOnboarded ?? false,
           })}
         }, '${frontendOrigin}');
         window.close();

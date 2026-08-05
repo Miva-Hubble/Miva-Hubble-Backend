@@ -3,8 +3,20 @@
 import { randomUUID } from "crypto";
 import prisma from "../lib/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
-import { BookType, BookStatus, Prisma } from "@prisma/client";
+import { BookType, BookStatus, FileFormat, Prisma } from "@prisma/client";
 import type { CreateBookInput, UpdateBookInput } from "../schemas/storage.schema.js";
+
+// Extension -> FileFormat. Deliberately separate from
+// MIME_TYPE_TO_FILE_FORMAT in storage.schema.ts: that map validates the
+// *upload request's declared* contentType, while this one derives the
+// format from the *path we actually generated and stored* — the same trust
+// boundary already used for storageObjectId (see resolveObjectIdByPath).
+const EXTENSION_TO_FILE_FORMAT: Record<string, FileFormat> = {
+  pdf: FileFormat.PDF,
+  epub: FileFormat.EPUB,
+  doc: FileFormat.DOC,
+  docx: FileFormat.DOCX,
+};
 
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "resources";
 
@@ -72,6 +84,24 @@ export class StorageService {
     return rows[0] ?? null;
   }
 
+  /**
+   * Derives the FileFormat enum from the extension on a server-generated
+   * storage path (e.g. "books/global/{uuid}_textbook.pdf" -> PDF). We never
+   * trust a client-supplied format for the same reason we never trust a
+   * client-supplied storageObjectId: the path is only ever one this service
+   * itself constructed in createSignedUploadUrl, so its extension is a
+   * reliable fact about the file, not client input.
+   */
+  private static deriveFileFormat(path: string): FileFormat {
+    const match = /\.([a-zA-Z0-9]+)$/.exec(path);
+    const extension = match?.[1]?.toLowerCase();
+    const format = extension ? EXTENSION_TO_FILE_FORMAT[extension] : undefined;
+    if (!format) {
+      throw new Error(`Unable to determine file format for upload path: ${path}`);
+    }
+    return format;
+  }
+
   // -------------------------------------------------------------------
   // Student private files
   // -------------------------------------------------------------------
@@ -127,6 +157,8 @@ export class StorageService {
       throw new Error("Upload not found — make sure the file finished uploading before registering it");
     }
 
+    const fileFormat = this.deriveFileFormat(data.path);
+
     try {
       return await prisma.book.create({
         data: {
@@ -137,6 +169,7 @@ export class StorageService {
           level: data.level,
           department: data.department,
           bookType: data.bookType,
+          fileFormat,
           tags: data.tags,
           status: data.status || BookStatus.DRAFT,
         },
@@ -268,4 +301,4 @@ export class StorageService {
   }
 }
 
-export { BookType, BookStatus };
+export { BookType, BookStatus, FileFormat };

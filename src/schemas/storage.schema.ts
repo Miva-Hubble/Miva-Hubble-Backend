@@ -3,7 +3,23 @@
 import { z } from "zod";
 import { BookType, BookStatus } from "@prisma/client";
 
-export const ALLOWED_UPLOAD_MIME_TYPES = ["application/pdf", "application/epub+zip"] as const;
+export const ALLOWED_UPLOAD_MIME_TYPES = [
+  "application/pdf",
+  "application/epub+zip",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+] as const;
+
+// Single source of truth mapping an accepted contentType to the Prisma
+// FileFormat enum. Every member of ALLOWED_UPLOAD_MIME_TYPES must have an
+// entry here — StorageService.deriveFileFormat re-derives this same value
+// server-side from the stored object's filename, so keep both in sync.
+export const MIME_TYPE_TO_FILE_FORMAT: Record<(typeof ALLOWED_UPLOAD_MIME_TYPES)[number], "PDF" | "EPUB" | "DOC" | "DOCX"> = {
+  "application/pdf": "PDF",
+  "application/epub+zip": "EPUB",
+  "application/msword": "DOC",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+};
 // 50MB — matches the Supabase bucket's file-size limit, which is a hard
 // ceiling enforced by the Free plan regardless of what this app says. Keep
 // this in lockstep with the bucket setting: if the bucket is ever raised
@@ -18,7 +34,7 @@ const SAFE_FILENAME = /^[^\\/\x00-\x1f]{1,255}$/;
 export const RequestUploadUrlSchema = z.object({
   filename: z.string().trim().min(1, "Filename is required").regex(SAFE_FILENAME, "Invalid filename"),
   contentType: z.enum(ALLOWED_UPLOAD_MIME_TYPES, {
-    message: "Only PDF and EPUB files are supported",
+    message: "Only PDF, EPUB, DOC, and DOCX files are supported",
   }),
   sizeBytes: z
     .number()

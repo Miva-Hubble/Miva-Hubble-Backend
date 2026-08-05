@@ -63,6 +63,17 @@ enum BookStatus {
   @@schema("public")
 }
 
+// Mirrors ALLOWED_UPLOAD_MIME_TYPES in src/schemas/storage.schema.ts — every
+// entry there must map to a member here (see storageService.deriveFileFormat).
+enum FileFormat {
+  PDF
+  EPUB
+  DOC
+  DOCX
+
+  @@schema("public")
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -207,6 +218,7 @@ model Book {
   level           String // Level100-Level500, or "All"
   department      String // e.g. "Computer Science", or "All"
   bookType        BookType   @map("book_type")
+  fileFormat      FileFormat @map("file_format") // Derived server-side from the uploaded file's extension — never client-supplied (see StorageService.deriveFileFormat)
   status          BookStatus @default(DRAFT)
   tags            String[]   @default([])
   createdAt       DateTime   @default(now()) @map("created_at")
