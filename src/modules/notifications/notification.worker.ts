@@ -119,7 +119,7 @@ export class NotificationWorker {
   }
 
   private setupEventListeners() {
-    this.worker.on("completed", async (job) => {
+    this.worker.on("completed", async (job: Job<NotificationJobData>) => {
       const count = job.data.recipients?.length ?? 1;
       console.log(`[NotificationWorker] Job ${job.id} completed successfully (${count} recipient(s) in batch)`);
       if (job.data.campaignId) {
@@ -127,11 +127,11 @@ export class NotificationWorker {
       }
     });
 
-    this.worker.on("failed", async (job, err) => {
-      console.error(`[NotificationWorker] Job ${job?.id} failed with error: ${err.message}`);
+    this.worker.on("failed", async (job: Job<NotificationJobData> | undefined, err: Error) => {
+      console.error(`[NotificationWorker] Job ${job?.id} failed with error: ${err?.message}`);
       if (!job || !job.data.campaignId) return;
 
-      const totalAttempts = job.opts.attempts ?? 1;
+      const totalAttempts = job.opts?.attempts ?? 1;
       if (job.attemptsMade >= totalAttempts) {
         await notificationCampaignRepository.maybeCompleteCampaign(job.data.campaignId);
       }
