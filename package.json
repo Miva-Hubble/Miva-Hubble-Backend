@@ -28,7 +28,6 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.16.0",
-    "@types/sanitize-html": "^2.13.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^6.1.0",
     "cookie-parser": "^1.4.7",
@@ -48,11 +47,12 @@
     "pg": "^8.17.1",
     "prisma": "^7.8.0",
     "resend": "^6.19.0",
-    "sanitize-html": "^2.13.1",
+    "sanitize-html": "^2.17.7",
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/sanitize-html": "^2.16.1",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "tsx": "^4.22.4"
