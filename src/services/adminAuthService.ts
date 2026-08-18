@@ -10,10 +10,19 @@ import jwt from "jsonwebtoken";
  * replayed against admin-only routes, and vice versa.
  */
 export class AdminAuthService {
-  static readonly ACCESS_TOKEN_SECRET =
-    process.env.ADMIN_ACCESS_TOKEN_SECRET || "admin-access-secret";
-  static readonly REFRESH_TOKEN_SECRET =
-    process.env.ADMIN_REFRESH_TOKEN_SECRET || "admin-refresh-secret";
+  // No fallback secrets — if these env vars are missing, fail loudly at startup
+  // rather than silently signing tokens with a predictable hardcoded string.
+  // The startup guard in index.ts REQUIRED_ENV_VARS is the single authority.
+  static readonly ACCESS_TOKEN_SECRET = (() => {
+    const secret = process.env.ADMIN_ACCESS_TOKEN_SECRET;
+    if (!secret) throw new Error("ADMIN_ACCESS_TOKEN_SECRET is not set");
+    return secret;
+  })();
+  static readonly REFRESH_TOKEN_SECRET = (() => {
+    const secret = process.env.ADMIN_REFRESH_TOKEN_SECRET;
+    if (!secret) throw new Error("ADMIN_REFRESH_TOKEN_SECRET is not set");
+    return secret;
+  })();
 
   static readonly ACCESS_TOKEN_EXPIRY: jwt.SignOptions["expiresIn"] = "15m";
   static readonly REFRESH_TOKEN_EXPIRY: jwt.SignOptions["expiresIn"] = "8h";
@@ -76,7 +85,9 @@ export class AdminAuthService {
     return {
       httpOnly: true,
       secure: isProd,
-      sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+      // "strict" in production: admin dashboard + API share the same origin,
+      // no cross-site auth flows exist. "none" was a CSRF vector.
+      sameSite: (isProd ? "strict" : "lax") as "strict" | "lax",
       maxAge,
       path: "/",
     };

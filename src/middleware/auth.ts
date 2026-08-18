@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/authService.js";
 import { HttpStatus } from "../utils/httpStatus.js";
+import { prisma } from "../lib/prisma.js";
 import type { UploadedImageFile } from "../types/upload.types.js";
 
 export interface AuthRequest extends Omit<Request, "file"> {
@@ -34,6 +35,20 @@ export const authenticate = async (
       userId: string;
       email: string;
     };
+
+    // Verify the user still exists in the database — catches deleted/banned
+    // users holding valid (not-yet-expired) JWTs. Lightweight select: no
+    // full user hydration, just existence check.
+    const userExists = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true },
+    });
+
+    if (!userExists) {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .json({ error: "User account no longer exists" });
+    }
 
     req.user = decoded;
 

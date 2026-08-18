@@ -7,6 +7,9 @@ import userRoutes from "./routes/user.js";
 import onboardingRoutes from "./routes/onboarding.route.js";
 import adminRoutes from "./routes/admin.js";
 import storageRoutes from "./routes/storage.js";
+import notificationRoutes from "./modules/notifications/notification.routes.js";
+import { initNotificationWorker } from "./modules/notifications/notification.worker.js";
+import { initOutboxWorker } from "./modules/notifications/outbox.worker.js";
 import "./events/onboarding.listener.js";
 import { errorHandler } from "./middleware/error.js";
 // app.ts
@@ -26,6 +29,8 @@ if (process.env.NODE_ENV === "production") {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_STORAGE_BUCKET",
     "SUPABASE_PROFILE_IMAGES_BUCKET",
+    "UPSTASH_REDIS_URL",
+    "RESEND_API_KEY",
   ];
 
   const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
@@ -43,6 +48,10 @@ if (process.env.NODE_ENV === "production") {
 
 const app = express();
 const PORT = process.env.PORT || 7292;
+
+// Trust the first proxy hop (Render's load balancer) so req.ip returns the
+// real client IP instead of the proxy's — required for rate limiters to work.
+app.set("trust proxy", 1);
 
 // Parse allowed origins from environment variable
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [
@@ -65,7 +74,9 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+// Body size limit: prevents trivial DoS via oversized payloads.
+// 1MB accommodates rich HTML email content in notification body field.
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // Routes
@@ -74,6 +85,45 @@ app.use("/api/user", userRoutes);
 app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/storage", storageRoutes);
+app.use("/api/notifications", notificationRoutes);
+
+// Initialize background worker processes
+let notificationWorkerInstance: ReturnType<typeof initNotificationWorker> | null = null;
+let outboxWorkerInstance: ReturnType<typeof initOutboxWorker> | null = null;
+
+if (process.env.DISABLE_NOTIFICATION_WORKER !== "true") {
+  try {
+    notificationWorkerInstance = initNotificationWorker();
+    console.log("⚡ Notification Worker process initialized");
+  } catch (workerErr) {
+    console.error("⚠️ Failed to initialize Notification Worker:", workerErr);
+  }
+
+  try {
+    outboxWorkerInstance = initOutboxWorker();
+    console.log("⚡ Outbox Worker process initialized");
+  } catch (outboxErr) {
+    console.error("⚠️ Failed to initialize Outbox Worker:", outboxErr);
+  }
+}
+
+// Graceful shutdown — drain BullMQ worker and outbox poller before process exit
+// Critical on Render: prevents jobs being marked as stalled mid-execution
+const gracefulShutdown = async (signal: string) => {
+  console.log(`\n[${signal}] Shutting down gracefully...`);
+  if (outboxWorkerInstance) {
+    await outboxWorkerInstance.stop();
+    console.log("✅ Outbox Worker stopped.");
+  }
+  if (notificationWorkerInstance) {
+    await notificationWorkerInstance.close();
+    console.log("✅ Notification Worker closed.");
+  }
+  process.exit(0);
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Health check
 app.get("/", (_req, res) => {
