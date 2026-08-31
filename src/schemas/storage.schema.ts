@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { BookType, BookStatus } from "@prisma/client";
+import { LEVELS, DEPARTMENTS, AUDIENCE_TAGS, TARGETING_WILDCARD } from "../constants/taxonomy.js";
 
 export const ALLOWED_UPLOAD_MIME_TYPES = [
   "application/pdf",
@@ -45,6 +46,31 @@ export const RequestUploadUrlSchema = z.object({
 
 export type RequestUploadUrlInput = z.infer<typeof RequestUploadUrlSchema>;
 
+export const ALLOWED_COVER_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+] as const;
+
+export const MAX_COVER_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024; // 5MB limit for cover images
+
+export const RequestCoverUploadUrlSchema = z.object({
+  filename: z.string().trim().min(1, "Filename is required").regex(SAFE_FILENAME, "Invalid filename"),
+  contentType: z.enum(ALLOWED_COVER_IMAGE_MIME_TYPES, {
+    message: "Only JPG, PNG, WEBP, and AVIF image files are supported for covers",
+  }),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_COVER_UPLOAD_SIZE_BYTES, `Cover image must be ${MAX_COVER_UPLOAD_SIZE_BYTES / (1024 * 1024)}MB or smaller`),
+});
+
+export type RequestCoverUploadUrlInput = z.infer<typeof RequestCoverUploadUrlSchema>;
+
+
+
 // `path` must be exactly the path our own upload-url endpoint generated —
 // never a client-supplied storageObjectId. StorageService re-derives and
 // verifies ownership of the path before trusting it (see storageService.ts).
@@ -55,16 +81,22 @@ export const CreateFileSchema = z.object({
 
 export type CreateFileInput = z.infer<typeof CreateFileSchema>;
 
-const TARGETING_TAG = z.string().trim().min(1).max(50);
+const TARGETING_LEVEL = z.enum([...LEVELS, TARGETING_WILDCARD] as const);
+const TARGETING_DEPARTMENT = z.enum([...DEPARTMENTS, TARGETING_WILDCARD] as const);
+const TARGETING_TAG = z.enum(AUDIENCE_TAGS);
 
 export const CreateBookSchema = z.object({
   path: z.string().trim().min(1, "path is required"),
   title: z.string().trim().min(1, "Title is required").max(300),
   author: z.string().trim().min(1, "Author is required").max(200),
   description: z.string().trim().max(2000).optional(),
-  level: z.string().trim().min(1, "Level is required").max(50),
-  department: z.string().trim().min(1, "Department is required").max(120),
+  level: TARGETING_LEVEL,
+  department: TARGETING_DEPARTMENT,
   bookType: z.nativeEnum(BookType),
+  // Optional URL pointing to the book's cover image in the public book-covers
+  // Supabase bucket. Returned by POST /admin/storage/books/cover-upload-url.
+  // Null/absent means the frontend falls back to a department icon placeholder.
+  coverImageUrl: z.string().url("coverImageUrl must be a valid URL").optional().nullable(),
   // Empty tags is valid and intentional: per the targeting rules, an
   // untagged book reaches "the whole department + level" rather than being
   // invisible, so we don't force at least one tag here.
@@ -79,9 +111,10 @@ export const UpdateBookSchema = z
     title: z.string().trim().min(1).max(300).optional(),
     author: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(2000).optional(),
-    level: z.string().trim().min(1).max(50).optional(),
-    department: z.string().trim().min(1).max(120).optional(),
+    level: TARGETING_LEVEL.optional(),
+    department: TARGETING_DEPARTMENT.optional(),
     bookType: z.nativeEnum(BookType).optional(),
+    coverImageUrl: z.string().url("coverImageUrl must be a valid URL").optional().nullable(),
     tags: z.array(TARGETING_TAG).max(30).optional(),
     status: z.nativeEnum(BookStatus).optional(),
   })

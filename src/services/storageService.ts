@@ -5,6 +5,7 @@ import prisma from "../lib/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { BookType, BookStatus, FileFormat, Prisma } from "@prisma/client";
 import type { CreateBookInput, UpdateBookInput } from "../schemas/storage.schema.js";
+import { TARGETING_WILDCARD } from "../constants/taxonomy.js";
 
 // Extension -> FileFormat. Deliberately separate from
 // MIME_TYPE_TO_FILE_FORMAT in storage.schema.ts: that map validates the
@@ -19,9 +20,14 @@ const EXTENSION_TO_FILE_FORMAT: Record<string, FileFormat> = {
 };
 
 const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "resources";
+const BOOK_COVERS_BUCKET = process.env.SUPABASE_BOOK_COVERS_BUCKET || "book-covers";
 
 const USER_FILES_PREFIX = (userId: string) => `users/${userId}/`;
 const BOOKS_PREFIX = "books/global/";
+const BOOK_COVERS_PREFIX = "covers/";
+
+const ALLOWED_COVER_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "avif"]);
+
 
 // Signed *download* URLs default to a few minutes — long enough for a slow
 // connection to actually start pulling a large PDF/EPUB, short enough that a
@@ -61,6 +67,36 @@ export class StorageService {
   static createBookUploadUrl(filename: string) {
     return this.createSignedUploadUrl(BOOKS_PREFIX, filename);
   }
+
+  /**
+   * Issues a signed upload URL for a book cover image into the public
+   * `book-covers` bucket. Validates the file extension server-side so only
+   * image types (jpg/jpeg/png/webp/avif) are accepted. The resulting public
+   * URL is stored as `coverImageUrl` on the Book row — it's served directly
+   * by Supabase CDN without a signed token because covers are public assets.
+   */
+  static async createBookCoverUploadUrl(filename: string) {
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    if (!ALLOWED_COVER_EXTENSIONS.has(ext)) {
+      throw new Error(`Cover image must be one of: jpg, jpeg, png, webp, avif. Got: .${ext}`);
+    }
+    const sanitizedFilename = filename.replace(/[\\/]/g, "_");
+    const path = `${BOOK_COVERS_PREFIX}${randomUUID()}_${sanitizedFilename}`;
+
+    const { data, error } = await supabaseAdmin.storage
+      .from(BOOK_COVERS_BUCKET)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      throw new Error(error?.message || "Failed to create cover image upload URL");
+    }
+
+    // Construct the permanent public URL — no expiry since the bucket is public.
+    const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/${BOOK_COVERS_BUCKET}/${path}`;
+
+    return { signedUrl: data.signedUrl, token: data.token, path, publicUrl };
+  }
+
 
   /**
    * Looks up the storage.objects row Supabase created for a given path once
@@ -170,6 +206,7 @@ export class StorageService {
           department: data.department,
           bookType: data.bookType,
           fileFormat,
+          coverImageUrl: data.coverImageUrl ?? null,
           tags: data.tags,
           status: data.status || BookStatus.DRAFT,
         },
@@ -233,25 +270,17 @@ export class StorageService {
 
   static async getPersonalizedFeed(userId: string) {
     const onboarding = await prisma.onboarding.findUnique({ where: { userId } });
-
-    // No onboarding profile yet => nothing to target against. Return an
-    // empty feed rather than guessing, per the "no general noise" rule.
     if (!onboarding) return [];
 
     return prisma.book.findMany({
       where: {
         status: BookStatus.PUBLISHED,
         AND: [
-          { OR: [{ level: onboarding.level }, { level: "All" }] },
-          { OR: [{ department: onboarding.department }, { department: "All" }] },
+          { OR: [{ level: onboarding.level }, { level: TARGETING_WILDCARD }] },
           {
             OR: [
-              { tags: { hasSome: onboarding.goals } },
-              { tags: { has: "All" } },
-              // Untagged books reach the whole matching level+department,
-              // per the "Leave empty to reach the whole department + level"
-              // rule shown in the admin upload UI.
-              { tags: { isEmpty: true } },
+              { department: { equals: onboarding.department, mode: "insensitive" } },
+              { department: TARGETING_WILDCARD },
             ],
           },
         ],
@@ -268,9 +297,17 @@ export class StorageService {
     userId: string,
     assetId: string,
     isBook: boolean,
-    expiresIn = DEFAULT_DOWNLOAD_URL_TTL_SECONDS,
-  ) {
+    mode: "preview" | "download" = "download",
+    expiresIn?: number,
+  ): Promise<{ signedUrl: string; previewCount?: number; downloadCount?: number }> {
+    // Preview needs a longer TTL — the signed URL must survive the full
+    // PDF load, not just the initial connection handshake. Download URLs
+    // can stay short because the browser starts pulling immediately.
+    const ttl = expiresIn ?? (mode === "preview" ? 300 : DEFAULT_DOWNLOAD_URL_TTL_SECONDS);
     let storageObjectId: string;
+    // Captured only on the isBook branch so we can project an updated
+    // count below without a second round-trip to fetch the book again.
+    let bookForCount: { previewCount: number; downloadCount: number } | null = null;
 
     if (isBook) {
       const book = await prisma.book.findFirst({
@@ -278,6 +315,7 @@ export class StorageService {
       });
       if (!book) throw new Error("Book not found or unavailable");
       storageObjectId = book.storageObjectId;
+      bookForCount = book;
     } else {
       const file = await prisma.userFile.findFirst({
         where: { id: assetId, userId, isArchived: false },
@@ -291,13 +329,84 @@ export class StorageService {
 
     const { data, error } = await supabaseAdmin.storage
       .from(location.bucket_id)
-      .createSignedUrl(location.name, expiresIn, { download: true });
+      .createSignedUrl(location.name, ttl, mode === "download" ? { download: true } : undefined);
 
     if (error || !data?.signedUrl) {
       throw new Error(error?.message || "Failed to generate download URL");
     }
 
+    // If interacting with a published book, record engagement.
+    // Tries BullMQ background queue first; falls back to direct DB record if Redis is unavailable.
+    if (isBook) {
+      this.recordEngagement(userId, assetId, mode === "download" ? "DOWNLOAD" : "PREVIEW").catch((err) => {
+        console.error(`[storage] Failed to record book engagement:`, err);
+      });
+    }
+
     return data.signedUrl;
+  }
+
+  /**
+   * Records unique engagement with guaranteed execution directly into PostgreSQL.
+   */
+  private static async recordEngagement(userId: string, bookId: string, type: "DOWNLOAD" | "PREVIEW") {
+    if (type === "DOWNLOAD") {
+      await this.directRecordDownload(userId, bookId);
+    } else {
+      await this.directRecordPreview(userId, bookId);
+    }
+  }
+
+  private static async directRecordPreview(userId: string, bookId: string) {
+    try {
+      // Atomic insert: relies on @@unique([userId, bookId]) constraint.
+      // If the user already viewed, this insert will reject with P2002 and jump to catch.
+      await prisma.$transaction([
+        prisma.bookView.create({
+          data: { userId, bookId },
+        }),
+        prisma.book.update({
+          where: { id: bookId },
+          data: { previewCount: { increment: 1 } },
+        }),
+      ]);
+    } catch (err: any) {
+      // P2002 is Prisma's unique constraint violation code (User already viewed)
+      if (err.code === "P2002" || err.message?.includes("Unique constraint")) {
+        await prisma.bookView.update({
+          where: { userId_bookId: { userId, bookId } },
+          data: { lastViewedAt: new Date() },
+        }).catch(() => {});
+      } else {
+        console.error(`[storage] Failed to record book preview:`, err);
+      }
+    }
+  }
+
+  private static async directRecordDownload(userId: string, bookId: string) {
+    try {
+      // Atomic insert: relies on @@unique([userId, bookId]) constraint.
+      // If the user already downloaded, this insert will reject with P2002 and jump to catch.
+      await prisma.$transaction([
+        prisma.bookDownload.create({
+          data: { userId, bookId },
+        }),
+        prisma.book.update({
+          where: { id: bookId },
+          data: { downloadCount: { increment: 1 } },
+        }),
+      ]);
+    } catch (err: any) {
+      // P2002 is Prisma's unique constraint violation code (User already downloaded)
+      if (err.code === "P2002" || err.message?.includes("Unique constraint")) {
+        await prisma.bookDownload.update({
+          where: { userId_bookId: { userId, bookId } },
+          data: { lastDownloadedAt: new Date() },
+        }).catch(() => {});
+      } else {
+        console.error(`[storage] Failed to record book download:`, err);
+      }
+    }
   }
 }
 

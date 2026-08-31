@@ -89,8 +89,11 @@ export const getDownloadUrl = async (req: AuthRequest, res: Response) => {
 
     const { id } = req.params;
     const isBook = req.query.isBook === "true"; // ?isBook=true
+    // ?mode=preview renders inline in the browser; anything else (including
+    // omitted) forces a download via Content-Disposition: attachment.
+    const mode = req.query.mode === "preview" ? "preview" : "download";
 
-    const signedUrl = await StorageService.generatePresignedUrl(userId, id, isBook);
+    const signedUrl = await StorageService.generatePresignedUrl(userId, id, isBook, mode);
     return res.status(HttpStatus.OK).json({ success: true, signedUrl });
   } catch (error: any) {
     console.error("Download URL generation error:", error);
@@ -110,6 +113,17 @@ export const getAdminBookUploadUrl = async (req: AdminAuthRequest, res: Response
   } catch (error: any) {
     console.error("Admin get upload URL error:", error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: error.message || "Failed to create upload URL" });
+  }
+};
+
+export const getAdminBookCoverUploadUrl = async (req: AdminAuthRequest, res: Response) => {
+  try {
+    const { filename } = req.body as { filename: string };
+    const upload = await StorageService.createBookCoverUploadUrl(filename);
+    return res.status(HttpStatus.OK).json({ success: true, ...upload });
+  } catch (error: any) {
+    console.error("Admin get cover upload URL error:", error);
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: error.message || "Failed to create cover upload URL" });
   }
 };
 

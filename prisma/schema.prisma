@@ -98,6 +98,8 @@ model User {
   onboarding             Onboarding?
   files                  UserFile[]
   notificationRecipients NotificationRecipient[]
+  bookDownloads          BookDownload[]
+  bookViews              BookView[]
 
   @@schema("public")
 }
@@ -222,12 +224,57 @@ model Book {
   department      String // e.g. "Computer Science", or "All"
   bookType        BookType   @map("book_type")
   fileFormat      FileFormat @map("file_format") // Derived server-side from the uploaded file's extension — never client-supplied (see StorageService.deriveFileFormat)
+  // Optional cover image stored in the public book-covers bucket. Null when
+  // admin didn't supply a cover — frontend falls back to a department icon.
+  coverImageUrl   String?    @map("cover_image_url")
   status          BookStatus @default(DRAFT)
   tags            String[]   @default([])
+  downloadCount   Int        @default(0) @map("download_count")
+  previewCount    Int        @default(0) @map("preview_count")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
+  downloads       BookDownload[]
+  views           BookView[]
+
+  @@index([status, downloadCount(sort: Desc)])
+  @@index([status, previewCount(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
   @@map("books")
+  @@schema("public")
+}
+
+// Tracks unique user previews/views per book to prevent view count inflation.
+model BookView {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id")
+  bookId       String   @map("book_id") @db.Uuid
+  viewedAt     DateTime @default(now()) @map("viewed_at")
+  lastViewedAt DateTime @updatedAt @map("last_viewed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@index([bookId])
+  @@map("book_views")
+  @@schema("public")
+}
+
+// Tracks unique user downloads per book to prevent duplicate download count inflation.
+model BookDownload {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id")
+  bookId           String   @map("book_id") @db.Uuid
+  downloadedAt     DateTime @default(now()) @map("downloaded_at")
+  lastDownloadedAt DateTime @updatedAt @map("last_downloaded_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@index([bookId])
+  @@map("book_downloads")
   @@schema("public")
 }
 
@@ -262,7 +309,7 @@ enum OutboxJobStatus {
 
 model OutboxJob {
   id         String          @id @default(cuid())
-  campaignId String          @map("campaign_id")
+  campaignId String          @map("campaign_id") @db.Uuid
   payload    Json
   status     OutboxJobStatus @default(PENDING)
   attempts   Int             @default(0)

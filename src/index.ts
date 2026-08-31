@@ -7,6 +7,8 @@ import userRoutes from "./routes/user.js";
 import onboardingRoutes from "./routes/onboarding.route.js";
 import adminRoutes from "./routes/admin.js";
 import storageRoutes from "./routes/storage.js";
+import taxonomyRoutes from "./routes/taxonomy.route.js";
+import feedRoutes from "./routes/feed.route.js";
 import notificationRoutes from "./modules/notifications/notification.routes.js";
 import { initNotificationWorker } from "./modules/notifications/notification.worker.js";
 import { initOutboxWorker } from "./modules/notifications/outbox.worker.js";
@@ -85,6 +87,8 @@ app.use("/api/user", userRoutes);
 app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/storage", storageRoutes);
+app.use("/api/taxonomy", taxonomyRoutes);
+app.use("/api/feed", feedRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 // Initialize background worker processes

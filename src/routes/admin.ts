@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import { adminLogin, adminRefreshToken, adminLogout, getCurrentAdmin } from "../controller/adminAuthController.js";
 import {
   getAdminBookUploadUrl,
+  getAdminBookCoverUploadUrl,
   adminCreateBook,
   adminListBooks,
   adminUpdateBook,
@@ -12,7 +13,12 @@ import {
 } from "../controller/storageController.js";
 import { validate } from "../middleware/validate.js";
 import { AdminLoginSchema } from "../schemas/admin.schema.js";
-import { RequestUploadUrlSchema, CreateBookSchema, UpdateBookSchema } from "../schemas/storage.schema.js";
+import {
+  RequestUploadUrlSchema,
+  RequestCoverUploadUrlSchema,
+  CreateBookSchema,
+  UpdateBookSchema,
+} from "../schemas/storage.schema.js";
 import { authenticateAdmin } from "../middleware/adminAuth.js";
 import { notificationController } from "../modules/notifications/notification.controller.js";
 import { createNotificationSchema } from "../modules/notifications/notification.validation.js";
@@ -41,6 +47,7 @@ router.get("/auth/me", authenticateAdmin, getCurrentAdmin);
 
 // Library book management — everything below requires an active admin session
 router.post("/storage/books/upload-url", authenticateAdmin, validate(RequestUploadUrlSchema), getAdminBookUploadUrl);
+router.post("/storage/books/cover-upload-url", authenticateAdmin, validate(RequestCoverUploadUrlSchema), getAdminBookCoverUploadUrl);
 router.post("/storage/books", authenticateAdmin, validate(CreateBookSchema), adminCreateBook);
 router.get("/storage/books", authenticateAdmin, adminListBooks);
 router.patch("/storage/books/:id", authenticateAdmin, validate(UpdateBookSchema), adminUpdateBook);

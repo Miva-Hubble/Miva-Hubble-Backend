@@ -9,6 +9,8 @@
     "check:onboarding": "node scripts/check-onboarding-api.mjs",
     "test:onboarding": "node scripts/test-onboarding-live.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
+    "fix:book-targeting": "node scripts/normalize-book-targeting.mjs",
+    "test:welcome-email": "tsx scripts/test-welcome-email.ts",
     "reconcile:campaigns": "tsx scripts/reconcile-stuck-campaigns.ts",
     "reconcile:campaigns:fix": "tsx scripts/reconcile-stuck-campaigns.ts --fix",
     "postinstall": "prisma generate"
