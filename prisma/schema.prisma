@@ -74,6 +74,30 @@ enum FileFormat {
   @@schema("public")
 }
 
+// ---------------------------------------------------------------------------
+// Student-submitted resources (separate domain from the admin-curated Book
+// library above — do not reuse BookStatus/BookType for these).
+// ---------------------------------------------------------------------------
+
+enum StudentResourceStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+
+  @@schema("public")
+}
+
+enum StudentResourceType {
+  NOTE
+  PAST_QUESTION
+  STUDY_GUIDE
+  REFERENCE
+
+  @@schema("public")
+}
+
 model User {
   id       String  @id @default(cuid())
   email    String  @unique
@@ -100,6 +124,9 @@ model User {
   notificationRecipients NotificationRecipient[]
   bookDownloads          BookDownload[]
   bookViews              BookView[]
+  studentResources       StudentResource[]
+  dailyGoals             DailyGoal[]
+  progression            UserProgression?
 
   @@schema("public")
 }
@@ -152,9 +179,10 @@ model Admin {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions              AdminSession[]
-  loginEvents           AdminLoginEvent[]
-  notificationCampaigns NotificationCampaign[]
+  sessions                 AdminSession[]
+  loginEvents              AdminLoginEvent[]
+  notificationCampaigns    NotificationCampaign[]
+  reviewedStudentResources StudentResource[]
 
   @@schema("public")
 }
@@ -234,8 +262,8 @@ model Book {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  downloads       BookDownload[]
-  views           BookView[]
+  downloads BookDownload[]
+  views     BookView[]
 
   @@index([status, downloadCount(sort: Desc)])
   @@index([status, previewCount(sort: Desc)])
@@ -275,6 +303,203 @@ model BookDownload {
   @@unique([userId, bookId])
   @@index([bookId])
   @@map("book_downloads")
+  @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Student-submitted resources, daily goals & rank progression
+//
+// Accounting model: DailyGoal is a container, never a progress counter.
+// A ResourceContribution is the only thing that links one APPROVED
+// StudentResource to one DailyGoal, and it is the source of truth for
+// "is today's goal complete" (3 active, non-revoked contributions for that
+// day) and for "how many resources has this student had approved" overall.
+// UserProgression is a denormalized snapshot for cheap reads (profile
+// pages, leaderboards) — it is derived from ResourceContribution rows, not
+// the other way around, and must stay reconcilable from them.
+// ---------------------------------------------------------------------------
+
+// A single academic resource a student submits for admin review. Physically
+// never hard-deleted once it has an attached ResourceContribution — see
+// ResourceContribution below for why (immutable accounting trail).
+model StudentResource {
+  id              String @id @default(uuid()) @db.Uuid
+  userId          String @map("user_id")
+  // Restrict, not Cascade: cascading here would let PostgreSQL attempt to
+  // delete a StudentResource that still has a Restrict-protected
+  // ResourceContribution, which fails at the DB level once a user has any
+  // accounting history. A user with progression history is therefore not
+  // physically deletable at all — account removal for such users must be
+  // implemented as anonymization/deactivation, not a destructive delete.
+  user            User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  storageObjectId String @unique @map("storage_object_id") @db.Uuid
+
+  // File metadata captured once at draft creation, from the same
+  // storage.objects verification StudentResourceService.createDraft already
+  // performs — not re-derived on every read. storagePath in particular is
+  // an INTERNAL-ONLY field: never serialize it in an API response. Clients
+  // must always be issued a short-lived signed URL (see storage routes)
+  // instead of the raw path — see StudentResourceService.toPublicResource,
+  // which every controller response is required to pass through.
+  storagePath String @map("storage_path")
+  mimeType    String @map("mime_type")
+  sizeBytes   Int    @map("size_bytes")
+
+  title       String
+  description String?
+  level       String
+  department  String
+  courseCode  String  @map("course_code")
+  courseTitle String  @map("course_title")
+
+  resourceType StudentResourceType   @map("resource_type")
+  fileFormat   FileFormat            @map("file_format")
+  status       StudentResourceStatus @default(DRAFT)
+
+  // Nullable + SetNull, matching the Admin-authored-content pattern already
+  // used by NotificationCampaign.createdByAdmin — a removed reviewer admin
+  // must never block deleting that admin's account, and the review decision
+  // itself (status/reviewedAt/rejectionReason) survives independently of who
+  // made it.
+  reviewedByAdminId String?   @map("reviewed_by_admin_id")
+  reviewedByAdmin   Admin?    @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  reviewedAt        DateTime? @map("reviewed_at")
+  // Distinct from reviewedAt because reviewedAt fires on rejection too —
+  // this is set only on approval, and is what reconstructing the Lagos
+  // contribution date (and any future audit of "when did this actually
+  // become an approved resource") must key off instead.
+  approvedAt        DateTime? @map("approved_at")
+  rejectionReason   String?   @map("rejection_reason")
+
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  contribution ResourceContribution?
+
+  // Supports the six-submission-per-day rate limit check (COUNT ... WHERE
+  // userId = ? AND submittedAt >= today).
+  @@index([userId, submittedAt])
+  // Supports the admin review queue (WHERE status = PENDING_REVIEW ORDER BY submittedAt).
+  @@index([status, submittedAt])
+  // Supports eventual student-resource discovery filtered by targeting + status.
+  @@index([level, department, status])
+  @@map("student_resources")
+  @@schema("public")
+}
+
+// A per-student, per-day accounting container. Deliberately holds no
+// progress percentage or manually-incremented counter — "how many
+// contributions today" and "is this goal complete" are always derived by
+// counting this row's active (non-revoked) ResourceContribution children,
+// never stored here. That's what keeps the count impossible to drift from
+// the underlying approved resources.
+model DailyGoal {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id")
+  // Restrict, matching StudentResource.user — same reason: a DailyGoal with
+  // Restrict-protected ResourceContribution children can't be cascaded
+  // through, so the parent User can't be either.
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  activityDate DateTime @map("activity_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  contributions ResourceContribution[]
+
+  // Non-negotiable: exactly one goal container per student per calendar day.
+  @@unique([userId, activityDate])
+  // Supports admin reporting (e.g. "how many goals were completed on date X").
+  @@index([activityDate])
+  @@map("daily_goals")
+  @@schema("public")
+}
+
+// The immutable accounting link between one approved StudentResource and
+// the DailyGoal it counted toward. This row, not a counter anywhere else,
+// is the ledger entry: a day's contribution count and a student's lifetime
+// approved-resource count are both derived by counting these (excluding
+// revoked ones), which is what makes UserProgression reconcilable rather
+// than an independent, driftable source of truth.
+model ResourceContribution {
+  id                String          @id @default(uuid()) @db.Uuid
+  studentResourceId String          @unique @map("student_resource_id") @db.Uuid
+  // Restrict, not Cascade: a StudentResource with a contribution must never
+  // be physically deletable — archive or revoke it instead, preserving the
+  // audit trail this table exists to guarantee.
+  studentResource   StudentResource @relation(fields: [studentResourceId], references: [id], onDelete: Restrict)
+
+  dailyGoalId String    @map("daily_goal_id") @db.Uuid
+  // Restrict, not Cascade: a DailyGoal must never disappear out from under
+  // contributions that still reference it.
+  dailyGoal   DailyGoal @relation(fields: [dailyGoalId], references: [id], onDelete: Restrict)
+
+  countedAt        DateTime  @default(now()) @map("counted_at")
+  // A decision reversal (e.g. a resource is retroactively disqualified)
+  // is recorded here, never by deleting the row — revokedAt/revocationReason
+  // preserve why a contribution stopped counting instead of erasing that it
+  // ever existed.
+  revokedAt        DateTime? @map("revoked_at")
+  revocationReason String?   @map("revocation_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // studentResourceId already has an implicit index via its own @unique;
+  // dailyGoalId does not, and every "how many active contributions for this
+  // goal" / "is this goal complete" read filters on it.
+  @@index([dailyGoalId])
+  @@map("resource_contributions")
+  @@schema("public")
+}
+
+// Fixed reference table of the ten progression ranks (Novice → Ultimate),
+// seeded once and rarely written to afterward — a cuid() primary key (like
+// User/Admin) rather than a uuid() suits stable, hand-seeded reference rows
+// better than the random uuid() used for high-volume domain tables above.
+model RankDefinition {
+  id                       String @id @default(cuid())
+  level                    Int    @unique
+  name                     String @unique
+  minimumApprovedResources Int    @unique @map("minimum_approved_resources")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userProgressions UserProgression[]
+
+  @@map("rank_definitions")
+  @@schema("public")
+}
+
+// Query-optimized snapshot of a student's progression, not the accounting
+// source of truth — that's ResourceContribution. The application updates
+// this transactionally alongside new contributions and must be able to
+// fully reconcile/rebuild it from contribution rows if it ever drifts.
+model UserProgression {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  rankId String         @map("rank_id")
+  // Restrict: a rank definition must never be deletable while a student
+  // snapshot still points at it.
+  rank   RankDefinition @relation(fields: [rankId], references: [id], onDelete: Restrict)
+
+  approvedResourceCount Int       @default(0) @map("approved_resource_count")
+  currentStreak         Int       @default(0) @map("current_streak")
+  longestStreak         Int       @default(0) @map("longest_streak")
+  lastCompletedGoalDate DateTime? @map("last_completed_goal_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // userId already has an implicit index via its own @unique; rankId does
+  // not, and any "how many students are at rank X" / rank-based leaderboard
+  // read filters on it.
+  @@index([rankId])
+  @@map("user_progressions")
   @@schema("public")
 }
 
@@ -374,8 +599,8 @@ model NotificationCampaign {
   // yet expose a distinct "campaign name" input, but the columns are no
   // longer conflated at the schema level, so that can change without
   // another migration.
-  subject String?
-  message String  @db.Text
+  subject        String?
+  message        String           @db.Text
 
   targetLevels      String[] @default([])
   targetDepartments String[] @default([])

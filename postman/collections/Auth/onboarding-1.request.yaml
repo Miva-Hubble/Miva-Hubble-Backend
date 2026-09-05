@@ -1,0 +1,28 @@
+$kind: http-request
+name: onboarding
+url: https://miva-hubble-backend.onrender.com/api/onboarding
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"level\": \"200\",\r
+
+    \  \"department\": \"Computer Science\",\r
+
+    \  \"goals\": [\r
+
+    \    \"Learn backend\",\r
+
+    \    \"Ace exams\"\r
+
+    \  ],\r
+
+    \  \"preferredMode\": \"anonymous\"\r
+
+    }"
+auth:
+  type: bearer
+  credentials:
+    token: ""
+order: 3647602698620871

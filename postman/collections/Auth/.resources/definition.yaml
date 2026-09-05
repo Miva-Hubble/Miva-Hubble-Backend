@@ -1,2 +1,9 @@
 $kind: collection
 name: Auth
+variables:
+  - key: supabase_service_role_api_key_0lm2
+    secret: true
+  - key: auth_secret_0lm2
+    secret: true
+  - key: auth_secret_0891
+    secret: true

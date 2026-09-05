@@ -1,0 +1,14 @@
+$kind: http-request
+name: onboarding
+url: http://localhost:7292/api/onboarding
+method: POST
+order: 3401512836337390
+description: |
+  Requires Bearer token. In dev, get accessToken from GET /api/auth/debug/token
+  after browser OAuth login.
+auth:
+  type: bearer
+  bearer:
+    - key: token
+      value: "{{accessToken}}"
+      type: string

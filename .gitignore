@@ -1,7 +1,10 @@
 node_modules
 dist
 .env
+.env.*
+!.env.example
 *.log
 
 /src/generated/prisma
 .kiro
+supabase/.temp/

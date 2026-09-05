@@ -1,0 +1,82 @@
+// src/app.ts
+
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/user.js";
+import onboardingRoutes from "./routes/onboarding.route.js";
+import adminRoutes from "./routes/admin.js";
+import storageRoutes from "./routes/storage.js";
+import taxonomyRoutes from "./routes/taxonomy.route.js";
+import feedRoutes from "./routes/feed.route.js";
+import notificationRoutes from "./modules/notifications/notification.routes.js";
+import studentResourceRoutes from "./routes/studentResource.js";
+import vaultRoutes from "./routes/vault.js";
+import "./events/onboarding.listener.js";
+import { errorHandler } from "./middleware/error.js";
+
+export const app = express();
+
+// Trust the first proxy hop (Render's load balancer) so req.ip returns the
+// real client IP instead of the proxy's — required for rate limiters to work.
+app.set("trust proxy", 1);
+
+// Parse allowed origins from environment variable
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [
+  "http://localhost:3000",
+];
+
+// Middleware
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or Postman)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  }),
+);
+
+// Body size limit: prevents trivial DoS via oversized payloads.
+// 1MB accommodates rich HTML email content in notification body field.
+app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
+
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/onboarding", onboardingRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/storage", storageRoutes);
+app.use("/api/taxonomy", taxonomyRoutes);
+app.use("/api/feed", feedRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/student-resources", studentResourceRoutes);
+app.use("/api/vault", vaultRoutes);
+
+// Health check
+app.get("/", (_req, res) => {
+  res.json({
+    message: "Miva Hubble API",
+    status: "running",
+  });
+});
+
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "Miva Hubble API",
+  });
+});
+
+app.use(errorHandler);
+
+export default app;

@@ -299,15 +299,12 @@ export class StorageService {
     isBook: boolean,
     mode: "preview" | "download" = "download",
     expiresIn?: number,
-  ): Promise<{ signedUrl: string; previewCount?: number; downloadCount?: number }> {
+  ): Promise<string> {
     // Preview needs a longer TTL — the signed URL must survive the full
     // PDF load, not just the initial connection handshake. Download URLs
     // can stay short because the browser starts pulling immediately.
     const ttl = expiresIn ?? (mode === "preview" ? 300 : DEFAULT_DOWNLOAD_URL_TTL_SECONDS);
     let storageObjectId: string;
-    // Captured only on the isBook branch so we can project an updated
-    // count below without a second round-trip to fetch the book again.
-    let bookForCount: { previewCount: number; downloadCount: number } | null = null;
 
     if (isBook) {
       const book = await prisma.book.findFirst({
@@ -315,7 +312,6 @@ export class StorageService {
       });
       if (!book) throw new Error("Book not found or unavailable");
       storageObjectId = book.storageObjectId;
-      bookForCount = book;
     } else {
       const file = await prisma.userFile.findFirst({
         where: { id: assetId, userId, isArchived: false },
@@ -327,16 +323,31 @@ export class StorageService {
     const location = await this.resolveObjectLocation(storageObjectId);
     if (!location) throw new Error("Physical file payload not found in storage bucket");
 
+    // Explicit, not implicit: `download: false` and `download: true` are
+    // the only two states Supabase Storage's signed-URL API exposes for
+    // Content-Disposition (no separate "inline" flag) — spelling both out
+    // keeps the choice visible at the call site instead of relying on an
+    // absent key defaulting to inline. Same fix already applied to Vault's
+    // equivalent signed-URL path (StudentResourceService.getVaultResourceSignedUrl).
     const { data, error } = await supabaseAdmin.storage
       .from(location.bucket_id)
-      .createSignedUrl(location.name, ttl, mode === "download" ? { download: true } : undefined);
+      .createSignedUrl(location.name, ttl, mode === "download" ? { download: true } : { download: false });
 
     if (error || !data?.signedUrl) {
       throw new Error(error?.message || "Failed to generate download URL");
     }
 
-    // If interacting with a published book, record engagement.
-    // Tries BullMQ background queue first; falls back to direct DB record if Redis is unavailable.
+    // If interacting with a published book, record engagement. Fire-and-
+    // forget deliberately: recordEngagement tries a BullMQ background queue
+    // first (falling back to a direct DB write only if Redis is unavailable),
+    // specifically so this hot path — called on every book view/download —
+    // never blocks the response on a DB write. That's why this function
+    // returns just the signedUrl string rather than an updated count: no
+    // synchronous count is available at this point without re-introducing
+    // the latency the queue exists to avoid. If a caller ever genuinely
+    // needs a live confirmed count, add it as an opt-in parameter (e.g.
+    // `{ includeProjectedCount: true }`) that only that caller pays for,
+    // rather than computing it here by default.
     if (isBook) {
       this.recordEngagement(userId, assetId, mode === "download" ? "DOWNLOAD" : "PREVIEW").catch((err) => {
         console.error(`[storage] Failed to record book engagement:`, err);
