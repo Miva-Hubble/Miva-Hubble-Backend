@@ -1,0 +1,18 @@
+$kind: http-request
+name: Debug Token (dev only)
+url: http://localhost:7292/api/auth/debug/token
+method: GET
+auth:
+  type: bearer
+  credentials:
+    token: ""
+order: 3401512836337389
+description: |
+  After completing Google OAuth in the browser (same host as this URL), call this
+  endpoint to get accessToken for Postman Bearer auth.
+
+  Local:  http://localhost:7292/api/auth/debug/token
+  Render: https://miva-hubble-backend.onrender.com/api/auth/debug/token
+          (requires deploy + ENABLE_DEBUG_TOKEN=true on Render)
+
+  Returns 404 in production unless ENABLE_DEBUG_TOKEN=true.

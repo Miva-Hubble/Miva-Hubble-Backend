@@ -1,0 +1,14 @@
+$kind: http-request
+name: AdminLogin
+url: http://localhost:7292/api/admin/auth/login
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"email\": \"miva-hubble@miva.edu.ng\",\r
+
+    \  \"password\": \"Admin123\"\r
+
+    }"
+order: 4369247185350590

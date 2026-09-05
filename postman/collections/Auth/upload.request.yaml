@@ -1,0 +1,20 @@
+$kind: http-request
+name: upload
+url: http://localhost:7292/api/admin/storage/books/upload-url
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"filename\": \"intro-to-algorithms.pdf\",\r
+
+    \  \"contentType\": \"application/pdf\",\r
+
+    \  \"sizeBytes\": 5242880\r
+
+    }"
+auth:
+  type: bearer
+  credentials:
+    token: ""
+order: 4406357117905769

@@ -22,6 +22,17 @@ import {
 import { authenticateAdmin } from "../middleware/adminAuth.js";
 import { notificationController } from "../modules/notifications/notification.controller.js";
 import { createNotificationSchema } from "../modules/notifications/notification.validation.js";
+import {
+  adminListStudentResources,
+  adminReviewStudentResource,
+  adminArchiveStudentResource,
+  getAdminStudentResourcePreviewUrl,
+} from "../controller/studentResourceController.js";
+import {
+  AdminReviewStudentResourceSchema,
+  AdminArchiveStudentResourceSchema,
+} from "../schemas/studentResource.schema.js";
+import { adminGetUserProgression, adminListProgression } from "../controller/progressionController.js";
 
 const router = Router();
 
@@ -66,5 +77,37 @@ router.post(
   notificationRateLimit,
   (req, res, next) => notificationController.sendNotification(req, res, next)
 );
+
+// Student resource moderation (Gate 7)
+router.get("/student-resources", authenticateAdmin, adminListStudentResources);
+router.get(
+  "/student-resources/:resourceId/preview-url",
+  authenticateAdmin,
+  getAdminStudentResourcePreviewUrl
+);
+router.get(
+  "/student-resources/:id/preview-url",
+  authenticateAdmin,
+  getAdminStudentResourcePreviewUrl
+);
+router.patch(
+  "/student-resources/:id/review",
+  authenticateAdmin,
+  validate(AdminReviewStudentResourceSchema),
+  adminReviewStudentResource
+);
+router.patch(
+  "/student-resources/:id/archive",
+  authenticateAdmin,
+  validate(AdminArchiveStudentResourceSchema),
+  adminArchiveStudentResource
+);
+
+// Admin progression reporting (Gate 10). Order matters: the fixed
+// "/progression" list route must not be shadowed by the "/users/:userId/..."
+// pattern, so it's registered as its own literal path rather than nested
+// under "/users".
+router.get("/users/:userId/progression", authenticateAdmin, adminGetUserProgression);
+router.get("/progression", authenticateAdmin, adminListProgression);
 
 export default router;

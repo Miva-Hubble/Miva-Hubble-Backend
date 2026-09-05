@@ -1,4 +1,5 @@
 $kind: http-request
-url: ""
+name: Oauth
+url: https://miva-hubble-backend.onrender.com/api/auth/google
 method: GET
 order: 1972229537076678

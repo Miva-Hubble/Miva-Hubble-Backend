@@ -4,14 +4,27 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:dev": "dotenv -e .env -e .env.dev -- tsx watch src/index.ts",
+    "dev:development": "dotenv -e .env.development -- pnpm dev",
+    "dev:production": "dotenv -e .env.production -- pnpm dev",
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "check:onboarding": "node scripts/check-onboarding-api.mjs",
     "test:onboarding": "node scripts/test-onboarding-live.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
+    "seed:ranks": "dotenv -e .env.development -- tsx scripts/seed-rank-definitions.ts",
     "fix:book-targeting": "node scripts/normalize-book-targeting.mjs",
     "test:welcome-email": "tsx scripts/test-welcome-email.ts",
+    "test:gate6": "dotenv -e .env.development -- tsx scripts/test-student-resources-e2e.ts",
+    "test:gate7": "dotenv -e .env.development -- tsx scripts/test-gate7-e2e.ts",
+    "test:gate8": "dotenv -e .env.development -- tsx scripts/test-gate8-progression.ts",
+    "test:gate9": "dotenv -e .env.development -- tsx scripts/test-gate9-progress-endpoint.ts",
+    "test:gate10": "dotenv -e .env.development -- tsx scripts/test-gate10-admin-progression-e2e.ts",
+    "test:gate12": "dotenv -e .env.development -- tsx scripts/test-gate12-vault-e2e.ts",
+    "test:daily-goal": "pnpm test:gate6 && pnpm test:gate7 && pnpm test:gate8 && pnpm test:gate9 && pnpm test:gate10 && pnpm test:gate12",
     "reconcile:campaigns": "tsx scripts/reconcile-stuck-campaigns.ts",
+    "reconcile:progression": "dotenv -e .env.development -- tsx scripts/reconcile-user-progression.ts",
+    "reconcile:progression:dry-run": "dotenv -e .env.development -- tsx scripts/reconcile-user-progression.ts --dry-run",
     "reconcile:campaigns:fix": "tsx scripts/reconcile-stuck-campaigns.ts --fix",
     "postinstall": "prisma generate"
   },
@@ -55,7 +68,9 @@
   },
   "devDependencies": {
     "@types/sanitize-html": "^2.16.1",
+    "dotenv-cli": "^11.0.0",
     "nodemon": "^3.1.14",
+    "supabase": "^2.116.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.22.4"
   }
