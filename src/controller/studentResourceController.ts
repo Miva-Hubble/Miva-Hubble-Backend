@@ -207,13 +207,13 @@ export const getVault = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // listVaultResources returns FeedResource rows (merged Book +
+    // StudentResource), not raw StudentResource Prisma objects — the raw
+    // SQL projection never selects storagePath/storageObjectId in the first
+    // place, so there is nothing left for toPublicResource to strip here.
     const result = await StudentResourceService.listVaultResources(userId, queryResult.data);
 
-    return res.status(HttpStatus.OK).json({
-      success: true,
-      ...result,
-      resources: result.resources.map((r) => StudentResourceService.toPublicResource(r)),
-    });
+    return res.status(HttpStatus.OK).json({ success: true, ...result });
   } catch (error: any) {
     console.error("Get vault error:", error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
