@@ -3,11 +3,13 @@
 import { randomUUID } from "crypto";
 import prisma from "../lib/prisma.js";
 import { supabaseAdmin } from "../config/supabase.js";
-import { StudentResourceStatus, StudentResourceType, FileFormat, Prisma } from "@prisma/client";
+import { StudentResourceStatus, StudentResourceType, FileFormat, BookStatus, Prisma } from "@prisma/client";
 import type { CreateStudentResourceInput, VaultQueryInput } from "../schemas/studentResource.schema.js";
 import { ALLOWED_UPLOAD_MIME_TYPES, MAX_UPLOAD_SIZE_BYTES } from "../schemas/storage.schema.js";
 import { getLagosDayBounds, getLagosCalendarDate } from "../lib/lagosTime.js";
 import { ProgressionService } from "./progressionService.js";
+import { StorageService } from "./storageService.js";
+import { TARGETING_WILDCARD } from "../constants/taxonomy.js";
 
 // Re-exported for backward compatibility — nothing outside this file
 // currently imports these, but they used to live here (Gate 6), and moving
@@ -31,6 +33,35 @@ const STUDENT_RESOURCES_PREFIX = (userId: string) => `student-resources/${userId
 // starting the pull.
 const VAULT_PREVIEW_URL_TTL_SECONDS = 300;
 const VAULT_DOWNLOAD_URL_TTL_SECONDS = 120;
+
+// ---------------------------------------------------------------------------
+// Gate 13 — unified Vault feed (admin Books + student-approved resources)
+//
+// Book and StudentResource stay two separate tables with two separate
+// write-side lifecycles (admin CRUD vs submit->review->approve) — merging
+// the schemas would mean bolting moderation-only columns onto Book and
+// admin-only columns onto StudentResource for no reason. What's unified is
+// only the READ side: one feed, one DTO, one `source` discriminator so the
+// frontend never has to know two tables are behind it.
+// ---------------------------------------------------------------------------
+export type FeedResourceSource = "BOOK" | "STUDENT";
+
+export interface FeedResource {
+  id: string;
+  source: FeedResourceSource;
+  title: string;
+  description: string | null;
+  level: string;
+  department: string;
+  resourceType: string;
+  fileFormat: string;
+  courseCode: string | null;
+  courseTitle: string | null;
+  uploaderName: string | null;
+  coverImageUrl: string | null;
+  downloadCount: number | null;
+  createdAt: Date;
+}
 
 export class StudentResourceService {
   /**
@@ -542,34 +573,66 @@ export class StudentResourceService {
   }
 
   /**
-   * GET /api/vault — published (APPROVED) student resources matching the
+   * GET /api/vault — the unified "All Resources" feed: admin-curated
+   * PUBLISHED Books plus student APPROVED StudentResources, matching the
    * caller's own onboarding level/department. `level`/`department` are
    * never accepted from the caller; onboarding is looked up fresh on every
    * call from the authenticated userId. A student with no Onboarding row
-   * yet gets an empty page, not an error — matching
-   * StorageService.getPersonalizedFeed's existing graceful-empty behavior.
+   * yet gets an empty page, not an error.
    *
-   * Exact equality on level/department (no wildcard, no case-insensitivity)
-   * — see docs/gate12-vault-publication-design.md §4 for why this
-   * deliberately differs from the admin-curated Book feed's matching rules.
+   * Each source is filtered to its OWN eligibility rule INSIDE its own
+   * query branch, before the two branches are ever combined — this is
+   * deliberate and non-negotiable. Book keeps its existing wildcard rule
+   * (`level = 'All'` / `department = 'All'` match anyone) and
+   * case-insensitive department match; StudentResource keeps its existing
+   * exact-equality rule and only ever includes status = APPROVED rows —
+   * never PENDING_REVIEW, REJECTED, DRAFT, or ARCHIVED. Filtering inside
+   * each branch (not as a post-union WHERE) is what makes it structurally
+   * impossible for a query-shape change to leak another student's pending
+   * submission or a mismatched-level Book into this feed.
+   *
+   * Implemented as one $queryRaw UNION ALL (CTE per source + a window-
+   * function total count), the same pattern ProgressionService.
+   * listUserProgression already uses, rather than two Prisma calls merged
+   * in Node — that keeps LIMIT/OFFSET correct across both sources instead
+   * of the classic "page 2 is wrong" bug you get from independently
+   * paginating two result sets and stitching them together afterward.
    */
   static async listVaultResources(userId: string, query: VaultQueryInput) {
     const onboarding = await prisma.onboarding.findUnique({ where: { userId } });
     if (!onboarding) {
-      return { resources: [], pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 } };
+      return { resources: [] as FeedResource[], pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 } };
     }
 
-    const where: Prisma.StudentResourceWhereInput = {
-      status: StudentResourceStatus.APPROVED,
-      level: onboarding.level,
-      department: onboarding.department,
-    };
+    const { level, department } = onboarding;
+    const offset = (query.page - 1) * query.limit;
+
+    const bookConditions: Prisma.Sql[] = [
+      Prisma.sql`b.status = 'PUBLISHED'`,
+      Prisma.sql`(b.level = ${level} OR b.level = 'All')`,
+      Prisma.sql`(b.department ILIKE ${department} OR b.department = 'All')`,
+    ];
+    const studentConditions: Prisma.Sql[] = [
+      Prisma.sql`sr.status = 'APPROVED'`,
+      Prisma.sql`sr.level = ${level}`,
+      Prisma.sql`sr.department = ${department}`,
+    ];
 
     if (query.courseCode) {
-      where.courseCode = query.courseCode;
+      // Books carry no course association at all — this filter naturally
+      // excludes every Book row rather than needing a special case.
+      bookConditions.push(Prisma.sql`FALSE`);
+      studentConditions.push(Prisma.sql`sr.course_code = ${query.courseCode}`);
     }
     if (query.resourceType) {
-      where.resourceType = query.resourceType;
+      // BookType and StudentResourceType are different Postgres enums but
+      // share three member names (PAST_QUESTION/STUDY_GUIDE/REFERENCE) —
+      // comparing both as text against the same filter value naturally
+      // yields the right result for the shared names and naturally excludes
+      // every row of the source whose enum doesn't have that member (e.g.
+      // "NOTE" only ever matches StudentResource; "TEXTBOOK" only Book).
+      bookConditions.push(Prisma.sql`b.book_type::text = ${query.resourceType}`);
+      studentConditions.push(Prisma.sql`sr.resource_type::text = ${query.resourceType}`);
     }
     if (query.search) {
       // Escape ILIKE wildcard metacharacters, matching
@@ -577,23 +640,101 @@ export class StudentResourceService {
       // mandatory for any ILIKE built from user input in this codebase.
       const escaped = query.search.replace(/[\\%_]/g, (m) => `\\${m}`);
       const pattern = `%${escaped}%`;
-      where.OR = [
-        { title: { contains: pattern, mode: "insensitive" } },
-        { courseTitle: { contains: pattern, mode: "insensitive" } },
-        { courseCode: { contains: pattern, mode: "insensitive" } },
-        { description: { contains: pattern, mode: "insensitive" } },
-      ];
+      bookConditions.push(
+        Prisma.sql`(b.title ILIKE ${pattern} ESCAPE '\\' OR b.description ILIKE ${pattern} ESCAPE '\\' OR b.author ILIKE ${pattern} ESCAPE '\\')`
+      );
+      studentConditions.push(
+        Prisma.sql`(sr.title ILIKE ${pattern} ESCAPE '\\' OR sr.description ILIKE ${pattern} ESCAPE '\\' OR sr.course_code ILIKE ${pattern} ESCAPE '\\' OR sr.course_title ILIKE ${pattern} ESCAPE '\\')`
+      );
     }
 
-    const [resources, total] = await Promise.all([
-      prisma.studentResource.findMany({
-        where,
-        orderBy: { approvedAt: "desc" },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-      }),
-      prisma.studentResource.count({ where }),
-    ]);
+    type FeedRow = {
+      id: string;
+      source: FeedResourceSource;
+      title: string;
+      description: string | null;
+      level: string;
+      department: string;
+      resource_type: string;
+      file_format: string;
+      course_code: string | null;
+      course_title: string | null;
+      uploader_name: string | null;
+      cover_image_url: string | null;
+      download_count: number | null;
+      created_at: Date;
+      total_count: number;
+    };
+
+    const rows = await prisma.$queryRaw<FeedRow[]>(Prisma.sql`
+      WITH eligible_books AS (
+        SELECT
+          b.id::text AS id,
+          'BOOK' AS source,
+          b.title,
+          b.description,
+          b.level,
+          b.department,
+          b.book_type::text AS resource_type,
+          b.file_format::text AS file_format,
+          NULL::text AS course_code,
+          NULL::text AS course_title,
+          b.author AS uploader_name,
+          b.cover_image_url AS cover_image_url,
+          b.download_count AS download_count,
+          b.created_at AS created_at
+        FROM books b
+        WHERE ${Prisma.join(bookConditions, " AND ")}
+      ),
+      eligible_student_resources AS (
+        SELECT
+          sr.id::text AS id,
+          'STUDENT' AS source,
+          sr.title,
+          sr.description,
+          sr.level,
+          sr.department,
+          sr.resource_type::text AS resource_type,
+          sr.file_format::text AS file_format,
+          sr.course_code AS course_code,
+          sr.course_title AS course_title,
+          u.name AS uploader_name,
+          NULL::text AS cover_image_url,
+          NULL::int AS download_count,
+          sr.approved_at AS created_at
+        FROM student_resources sr
+        JOIN "User" u ON u.id = sr.user_id
+        WHERE ${Prisma.join(studentConditions, " AND ")}
+      ),
+      combined AS (
+        SELECT * FROM eligible_books
+        UNION ALL
+        SELECT * FROM eligible_student_resources
+      )
+      SELECT *, COUNT(*) OVER()::int AS total_count
+      FROM combined
+      ORDER BY created_at DESC
+      LIMIT ${query.limit} OFFSET ${offset}
+    `);
+
+    const total = rows[0]?.total_count ?? 0;
+
+    const resources: FeedResource[] = rows.map((r) => ({
+      id: r.id,
+      source: r.source,
+      title: r.title,
+      description: r.description,
+      level: r.level,
+      department: r.department,
+      resourceType: r.resource_type,
+      fileFormat: r.file_format,
+      courseCode: r.course_code,
+      courseTitle: r.course_title,
+      uploaderName: r.uploader_name,
+      coverImageUrl: r.cover_image_url,
+      downloadCount: r.download_count,
+      createdAt: r.created_at,
+    }));
 
     return {
       resources,
@@ -608,12 +749,17 @@ export class StudentResourceService {
 
   /**
    * GET /api/vault/:id/url — signed preview/download URL for a published
-   * resource, gated on the same three checks every time: APPROVED status,
-   * level match, department match — all re-derived fresh from the DB, never
-   * trusted from a prior call. Any failure throws "Resource not found",
-   * which the controller maps to 404 (never 403) so an ineligible student
-   * can't distinguish "doesn't exist" from "exists but isn't eligible" —
-   * matching the existing GET /api/notifications/:id convention.
+   * feed item, gated on the same eligibility checks listVaultResources uses
+   * — all re-derived fresh from the DB, never trusted from a prior /api/vault
+   * call. Any failure throws "Resource not found", which the controller
+   * maps to 404 (never 403) so an ineligible student can't distinguish
+   * "doesn't exist" from "exists but isn't eligible" — matching the existing
+   * GET /api/notifications/:id convention.
+   *
+   * Tries the StudentResource source first, then Book — a plain fallback,
+   * not a "which source is this id" lookup, since the two tables draw their
+   * ids from independent uuid() pools and a collision between them is
+   * cryptographically negligible.
    *
    * mode="preview" → inline Content-Disposition (renders in-browser).
    * mode="download" → attachment Content-Disposition (forces a save dialog).
@@ -630,7 +776,7 @@ export class StudentResourceService {
       throw new Error("Resource not found");
     }
 
-    const resource = await prisma.studentResource.findFirst({
+    const studentResource = await prisma.studentResource.findFirst({
       where: {
         id: resourceId,
         status: StudentResourceStatus.APPROVED,
@@ -638,11 +784,36 @@ export class StudentResourceService {
         department: onboarding.department,
       },
     });
-    if (!resource) {
-      throw new Error("Resource not found");
+
+    let storageObjectId: string;
+    let approvedBookId: string | null = null;
+
+    if (studentResource) {
+      storageObjectId = studentResource.storageObjectId;
+    } else {
+      const book = await prisma.book.findFirst({
+        where: {
+          id: resourceId,
+          status: BookStatus.PUBLISHED,
+          AND: [
+            { OR: [{ level: onboarding.level }, { level: TARGETING_WILDCARD }] },
+            {
+              OR: [
+                { department: { equals: onboarding.department, mode: "insensitive" } },
+                { department: TARGETING_WILDCARD },
+              ],
+            },
+          ],
+        },
+      });
+      if (!book) {
+        throw new Error("Resource not found");
+      }
+      storageObjectId = book.storageObjectId;
+      approvedBookId = book.id;
     }
 
-    const location = await this.resolveObjectLocation(resource.storageObjectId);
+    const location = await this.resolveObjectLocation(storageObjectId);
     if (!location) {
       throw new Error("Physical file payload not found in storage bucket");
     }
@@ -664,6 +835,19 @@ export class StudentResourceService {
 
     if (error || !data?.signedUrl) {
       throw new Error(error?.message || "Failed to generate signed URL");
+    }
+
+    // Book engagement counters (downloadCount/previewCount) only make sense
+    // for the BOOK source — StudentResource has no equivalent counter today.
+    // Fire-and-forget, same rationale as StorageService.generatePresignedUrl:
+    // this is a hot read path and must never block the response on a
+    // secondary DB write.
+    if (approvedBookId) {
+      StorageService.recordBookEngagement(userId, approvedBookId, mode === "download" ? "DOWNLOAD" : "PREVIEW").catch(
+        (err) => {
+          console.error(`[vault] Failed to record book engagement:`, err);
+        }
+      );
     }
 
     return data.signedUrl;

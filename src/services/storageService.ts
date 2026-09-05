@@ -368,6 +368,21 @@ export class StorageService {
     }
   }
 
+  /**
+   * Public entry point for recording Book engagement from outside this
+   * service — specifically StudentResourceService.getVaultResourceSignedUrl,
+   * which issues signed URLs for both Book and StudentResource feed items
+   * behind one unified /api/vault/:id/url endpoint (Gate 13). Book is the
+   * only source with download/preview counters today, so this is a no-op
+   * concept for the StudentResource branch of that call site. Thin wrapper
+   * around the existing private recordEngagement rather than making that
+   * method itself public, so every *internal* call site here keeps using
+   * the same private method uniformly.
+   */
+  static recordBookEngagement(userId: string, bookId: string, type: "DOWNLOAD" | "PREVIEW") {
+    return this.recordEngagement(userId, bookId, type);
+  }
+
   private static async directRecordPreview(userId: string, bookId: string) {
     try {
       // Atomic insert: relies on @@unique([userId, bookId]) constraint.
