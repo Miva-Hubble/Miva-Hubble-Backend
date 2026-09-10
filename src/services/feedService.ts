@@ -106,14 +106,20 @@ export async function getUser(userId: string): Promise<UserFeed> {
       name: true,
       username: true,
       email: true,
-      picture: true,
-      profilePicturePath: true,
+      gender: true,
       onboarding: {
         select: {
           level: true,
           department: true,
           goals: true,
           preferredMode: true,
+        },
+      },
+      progression: {
+        select: {
+          rank: {
+            select: { level: true, name: true },
+          },
         },
       },
     },
@@ -126,14 +132,13 @@ export async function getUser(userId: string): Promise<UserFeed> {
     name: user.name,
     username: user.username,
     email: user.email,
-    // profilePicturePath (uploaded avatar) takes precedence over the Google
-    // OAuth picture; fall back to picture if no custom upload exists.
-    avatarUrl: user.profilePicturePath ?? user.picture ?? null,
+    gender: user.gender,
     level: user.onboarding?.level ?? null,
     department: user.onboarding?.department ?? null,
     goals: user.onboarding?.goals ?? [],
     preferredMode: user.onboarding?.preferredMode ?? PreferredMode.ANONYMOUS,
     isOnboarded: user.onboarding !== null,
+    rank: user.progression?.rank ?? null,
   };
 }
 
