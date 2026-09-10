@@ -6,6 +6,7 @@ import prisma from "../lib/prisma.js";
 import { HttpStatus } from "../utils/httpStatus.js";
 import { ALLOWED_EMAIL_DOMAIN } from "../schemas/auth.schema.js";
 import { getUserProfile } from "../services/userService.js";
+import { UsernameTakenError } from "../errors/usernameTakenError.js";
 
 const isMivaEmail = (email: string) => email.endsWith(ALLOWED_EMAIL_DOMAIN);
 
@@ -39,7 +40,10 @@ export const googleAuth = async (req: Request, res: Response) => {
       user = await prisma.user.create({
         data: {
           email: payload.email,
-          username: payload.email.split("@")[0],
+          // username intentionally omitted — Google never supplies one, and
+          // auto-deriving it from the email prefix bypassed the shared
+          // uniqueness/format rules onboarding enforces. Stays null until
+          // the user chooses one during onboarding (2.1/2.2).
           name: payload.name || "",
           googleId: payload.sub,
           picture: payload.picture,
@@ -100,9 +104,14 @@ export const register = async (req: Request, res: Response) => {
 
     // 3. If user exists, handle based on verification status
     if (user) {
-      // Check which field caused the conflict
+      // Check which field caused the conflict — username collision now
+      // throws the same UsernameTakenError (409) that onboarding (2.3) and
+      // PATCH /api/user/username (3.2) throw, instead of this endpoint's
+      // own ad-hoc { error: "Username already exists" } shape. Username is
+      // still required and set immediately at registration — only the
+      // error contract changes, not when username is claimed.
       if (user.username === username) {
-        return res.status(HttpStatus.CONFLICT).json({ error: "Username already exists" });
+        throw new UsernameTakenError();
       }
 
       // Email exists - check if verified
@@ -144,7 +153,14 @@ export const register = async (req: Request, res: Response) => {
       redirectTo: "/otp",
       message: "User registered. OTP sent to your email for verification",
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === "UsernameTakenError") {
+      return res.status(error.status ?? HttpStatus.CONFLICT).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     console.error("Registration error:", error);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: "Registration failed" });
   }

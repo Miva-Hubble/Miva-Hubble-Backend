@@ -3,6 +3,7 @@
 import { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth.js";
 import * as onboardingService from "../services/onboardingService.js";
+import { normalizeGender } from "../utils/normalizeGender.js";
 
 export const completeOnboarding = async (
   req: AuthRequest,
@@ -13,7 +14,7 @@ export const completeOnboarding = async (
     const userId = req.user?.userId;
     if (!userId) throw new Error("Unauthorized");
 
-    const { onboarding, profilePicturePath } = await onboardingService.completeOnboarding(
+    const { onboarding, username, gender } = await onboardingService.completeOnboarding(
       userId,
       req.body,
     );
@@ -26,7 +27,8 @@ export const completeOnboarding = async (
         department: onboarding.department,
         goals: onboarding.goals,
         preferredMode: onboarding.preferredMode.toLowerCase(),
-        profilePicturePath: profilePicturePath ?? null,
+        username,
+        gender: normalizeGender(gender),
         isOnboarded: true,
         onboardedAt: onboarding.completedAt,
       },

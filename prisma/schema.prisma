@@ -7,6 +7,13 @@ datasource db {
   schemas  = ["public"]
 }
 
+enum Gender {
+  MALE
+  FEMALE
+
+  @@schema("public")
+}
+
 enum LoginProvider {
   GOOGLE
   NORMAL
@@ -101,9 +108,10 @@ enum StudentResourceType {
 model User {
   id       String  @id @default(cuid())
   email    String  @unique
-  username String  @unique
+  username String? @unique
   name     String
   password String?
+  gender   Gender?
 
   googleId           String? @unique
   picture            String?
@@ -154,6 +162,12 @@ model Onboarding {
   goals         String[]
   preferredMode PreferredMode @default(ANONYMOUS)
   completedAt   DateTime      @default(now())
+
+  // Null until the department is changed for the first time post-onboarding
+  // (PATCH /api/user/department). Drives the 60-day cooldown enforced in
+  // OnboardingService.updateDepartment — see that function's comment for
+  // why recalculation reads this directly rather than caching a countdown.
+  departmentChangedAt DateTime?
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -4,7 +4,7 @@
 // Uses native Prisma enums to guarantee data integrity before sending.
 
 import { z } from "zod";
-import { BookType, FileFormat, PreferredMode } from "@prisma/client";
+import { BookType, FileFormat, Gender, PreferredMode } from "@prisma/client";
 
 export const feedSectionSchema = z.enum([
   "user",
@@ -29,17 +29,23 @@ export const bookCardSchema = z.object({
   previewCount: z.number().int().nonnegative(),
 });
 
+export const rankSummarySchema = z.object({
+  level: z.number().int(),
+  name: z.string(),
+});
+
 export const userFeedSchema = z.object({
   id: z.string(),
   name: z.string(),
   username: z.string(),
   email: z.string(),
-  avatarUrl: z.string().nullable(),
+  gender: z.nativeEnum(Gender).nullable(),
   level: z.string().nullable(),
   department: z.string().nullable(),
   goals: z.array(z.string()),
   preferredMode: z.nativeEnum(PreferredMode),
   isOnboarded: z.boolean(),
+  rank: rankSummarySchema.nullable(),
 });
 
 export const categoryGroupSchema = z.object({

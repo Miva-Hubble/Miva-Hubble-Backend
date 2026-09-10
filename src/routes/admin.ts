@@ -33,6 +33,7 @@ import {
   AdminArchiveStudentResourceSchema,
 } from "../schemas/studentResource.schema.js";
 import { adminGetUserProgression, adminListProgression } from "../controller/progressionController.js";
+import { adminListUsers } from "../controller/adminUserController.js";
 
 const router = Router();
 
@@ -102,6 +103,12 @@ router.patch(
   validate(AdminArchiveStudentResourceSchema),
   adminArchiveStudentResource
 );
+
+// Admin "Users" dashboard tab: paginated roster of every student plus
+// their onboarding selection. Registered as its own literal "/users" path —
+// distinct route depth from "/users/:userId/progression" below, so there's
+// no shadowing risk between the two.
+router.get("/users", authenticateAdmin, adminListUsers);
 
 // Admin progression reporting (Gate 10). Order matters: the fixed
 // "/progression" list route must not be shadowed by the "/users/:userId/..."

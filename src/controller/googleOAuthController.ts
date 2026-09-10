@@ -287,6 +287,28 @@ export const handleGoogleCallbackPopup = async (
 };
 
 /**
+ * POST /api/auth/logout
+ * Clears the accessToken/refreshToken cookies. Must use the exact same
+ * httpOnly/secure/sameSite attributes used when they were set in
+ * handleGoogleCallback / refreshAuthToken — a mismatch here means the
+ * browser won't recognize it as the same cookie and won't actually clear it,
+ * leaving the session live even though the client believes it logged out.
+ */
+export const logout = async (req: Request, res: Response) => {
+  const isProd = process.env.NODE_ENV === "production";
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+  };
+
+  res.clearCookie("accessToken", cookieOptions);
+  res.clearCookie("refreshToken", cookieOptions);
+
+  return res.status(HttpStatus.OK).json({ success: true, message: "Logged out" });
+};
+
+/**
  * GET /api/auth/debug/token
  * Development-only: returns the current session tokens and user for Postman/API testing.
  * Complete OAuth in the browser first so cookies are set, then call this endpoint.

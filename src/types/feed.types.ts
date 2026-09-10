@@ -3,7 +3,7 @@
 // Single source of truth for the /api/feed response contract.
 // All section loaders in feedService.ts return these types.
 
-import type { BookType, FileFormat, PreferredMode } from "@prisma/client";
+import type { BookType, FileFormat, Gender, PreferredMode } from "@prisma/client";
 
 export type FeedSection =
   | "user"
@@ -40,18 +40,29 @@ export interface BookCard {
 // Section payloads
 // ---------------------------------------------------------------------------
 
+/**
+ * Minimal rank exposure — first time rank is shown to the student
+ * themselves (previously admin-only). A user with no UserProgression row
+ * yet gets `rank: null` on UserFeed; client avatar/badge logic must have a
+ * defined default for that case.
+ */
+export interface RankSummary {
+  level: number;
+  name: string;
+}
+
 export interface UserFeed {
   id: string;
   name: string;
   username: string;
   email: string;
-  /** Google picture URL or uploaded profilePicturePath, whichever is set. */
-  avatarUrl: string | null;
+  gender: Gender | null;
   level: string | null;
   department: string | null;
   goals: string[];
   preferredMode: PreferredMode;
   isOnboarded: boolean;
+  rank: RankSummary | null;
 }
 
 export interface CategoryGroup {

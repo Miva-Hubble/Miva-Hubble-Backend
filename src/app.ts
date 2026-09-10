@@ -6,6 +6,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
+import usersRoutes from "./routes/users.route.js";
 import onboardingRoutes from "./routes/onboarding.route.js";
 import adminRoutes from "./routes/admin.js";
 import storageRoutes from "./routes/storage.js";
@@ -53,6 +54,7 @@ app.use(cookieParser());
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/users", usersRoutes);
 app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/storage", storageRoutes);
