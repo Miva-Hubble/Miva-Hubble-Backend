@@ -49,7 +49,7 @@ export const AdminListUsersQuerySchema = z.object({
   // users with a completed Onboarding record, "false" = only users who
   // haven't onboarded yet.
   onboarded: z
-    .enum(["true", "false"], { errorMap: () => ({ message: "onboarded must be 'true' or 'false'" }) })
+    .enum(["true", "false"], { message: "onboarded must be 'true' or 'false'" })
     .transform((v) => v === "true")
     .optional(),
 });

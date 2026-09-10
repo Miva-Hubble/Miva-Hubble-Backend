@@ -54,7 +54,7 @@ export interface RankSummary {
 export interface UserFeed {
   id: string;
   name: string;
-  username: string;
+  username: string | null;
   email: string;
   gender: Gender | null;
   level: string | null;

@@ -148,7 +148,7 @@ export interface AdminListUsersParams {
 export interface AdminUserListItem {
   id: string;
   name: string;
-  username: string;
+  username: string | null;
   email: string;
   picture: string | null;
   profilePicturePath: string | null;

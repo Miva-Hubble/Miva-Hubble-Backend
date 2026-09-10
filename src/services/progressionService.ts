@@ -78,7 +78,7 @@ export interface AdminUserProgressSnapshot extends StudentProgressSnapshot {
   user: {
     id: string;
     name: string;
-    username: string;
+    username: string | null;
     email: string;
   };
   recentDays: {
@@ -92,7 +92,7 @@ export interface AdminUserProgressSnapshot extends StudentProgressSnapshot {
 export interface AdminProgressionListItem {
   id: string;
   name: string;
-  username: string;
+  username: string | null;
   email: string;
   rank: { name: string; level: number };
   approvedResourceCount: number;
@@ -500,7 +500,7 @@ export class ProgressionService {
     type Row = {
       id: string;
       name: string;
-      username: string;
+      username: string | null;
       email: string;
       created_at: Date;
       rank_level: number;
