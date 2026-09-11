@@ -52,6 +52,18 @@ export const AdminListUsersQuerySchema = z.object({
     .enum(["true", "false"], { message: "onboarded must be 'true' or 'false'" })
     .transform((v) => v === "true")
     .optional(),
+
+  // When "true", only return users whose stored department is no longer in
+  // the canonical DEPARTMENTS list (i.e. departmentNeedsReselection === true).
+  // Useful for the admin dashboard to quickly audit how many students are
+  // affected by a taxonomy update. Mutually exclusive with onboarded=false
+  // (a user without an Onboarding row can't have a stale department), though
+  // the server handles this gracefully without a 400 — staleOnly simply
+  // implies the user must be onboarded.
+  staleOnly: z
+    .enum(["true", "false"], { message: "staleOnly must be 'true' or 'false'" })
+    .transform((v) => v === "true")
+    .optional(),
 });
 
 export type AdminListUsersQueryInput = z.infer<typeof AdminListUsersQuerySchema>;

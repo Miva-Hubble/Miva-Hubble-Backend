@@ -1,14 +1,30 @@
 export const LEVELS = ["100", "200", "300", "400", "500"] as const;
 
 export const DEPARTMENTS = [
+  "Accounting",
+  "Artificial Intelligence",
+  "Business Management",
+  "Childhood Education",
+  "Cloud Computing",
+  "Community Health Science",
   "Computer Science",
-  "Engineering",
-  "Business",
-  "Medicine",
-  "Arts",
-  "Information Technology",
-  "Data Science",
+  "Criminology and Security Studies",
   "Cybersecurity",
+  "Data Science",
+  "Economics",
+  "Entrepreneurship",
+  "Information Technology",
+  "Mass Communication and Media Studies",
+  "Nursing Science",
+  "Primary Education",
+  "Public Health",
+  "Public Policy and Administration",
+  "Software Engineering",
+  "Master of Business Administration (MBA)",
+  "Master of Information Technology (MIT)",
+  "Master of Public Administration (MPA)",
+  "Master of Public Health (MPH)",
+  "Doctorate in Business Management",
 ] as const;
 
 export const GOALS = [

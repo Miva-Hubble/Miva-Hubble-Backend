@@ -35,8 +35,8 @@ export const adminListUsers = async (req: AdminAuthRequest, res: Response) => {
       });
     }
 
-    const { page, limit, search, level, department, onboarded } = queryResult.data;
-    const result = await listUsersForAdmin({ page, limit, search, level, department, onboarded });
+    const { page, limit, search, level, department, onboarded, staleOnly } = queryResult.data;
+    const result = await listUsersForAdmin({ page, limit, search, level, department, onboarded, staleOnly });
 
     return res.status(HttpStatus.OK).json({ success: true, ...result });
   } catch (error: any) {

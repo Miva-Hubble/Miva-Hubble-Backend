@@ -7,6 +7,7 @@ import type { OnboardingDto } from "../schemas/validations/onboarding.schema.js"
 import { UsernameTakenError } from "../errors/usernameTakenError.js";
 import { DepartmentCooldownError } from "../errors/departmentCooldownError.js";
 import { toPrismaGender } from "../utils/normalizeGender.js";
+import { DEPARTMENTS } from "../constants/taxonomy.js";
 
 const toPreferredMode = (mode: OnboardingDto["preferredMode"]): PreferredMode =>
   mode === "identified" ? PreferredMode.IDENTIFIED : PreferredMode.ANONYMOUS;
@@ -120,7 +121,19 @@ export const updateDepartment = async (userId: string, department: string) => {
     return onboarding;
   }
 
-  if (onboarding.departmentChangedAt) {
+  // A department that no longer exists in the canonical DEPARTMENTS list
+  // (e.g. it was renamed/retired in a taxonomy update) was never a choice
+  // the student can be held to — the cooldown exists to rate-limit
+  // voluntary changes between two currently-valid options, not to lock a
+  // student into a value the system itself invalidated. Only enforce the
+  // cooldown when their *current* department is still a real, selectable
+  // one; a stale current value always allows an immediate correction,
+  // regardless of departmentChangedAt.
+  const isCurrentDepartmentStale = !DEPARTMENTS.includes(
+    onboarding.department as (typeof DEPARTMENTS)[number],
+  );
+
+  if (!isCurrentDepartmentStale && onboarding.departmentChangedAt) {
     const availableAt = new Date(
       onboarding.departmentChangedAt.getTime() + DEPARTMENT_COOLDOWN_MS,
     );

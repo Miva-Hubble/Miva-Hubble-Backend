@@ -4,6 +4,7 @@ import prisma from "../lib/prisma.js";
 import type { Prisma } from "@prisma/client";
 import { UsernameTakenError } from "../errors/usernameTakenError.js";
 import { normalizeGender, toPrismaGender } from "../utils/normalizeGender.js";
+import { DEPARTMENTS } from "../constants/taxonomy.js";
 
 /**
  * Single shared uniqueness check backing both GET /api/users/check-username
@@ -125,10 +126,21 @@ export async function getUserProfile(userId: string) {
 
   if (!user) return null;
 
+  // True when the student's stored department was valid at onboarding time
+  // but has since been renamed/retired from the canonical DEPARTMENTS list
+  // (see OnboardingService.updateDepartment for the matching cooldown
+  // bypass). The frontend/admin should treat this as a forced re-selection
+  // prompt on next login, distinct from isOnboarded — the student HAS
+  // onboarded, their choice just no longer resolves to anything real.
+  const departmentNeedsReselection = user.onboarding
+    ? !DEPARTMENTS.includes(user.onboarding.department as (typeof DEPARTMENTS)[number])
+    : false;
+
   return {
     ...user,
     gender: normalizeGender(user.gender),
     isOnboarded: user.onboarding !== null,
+    departmentNeedsReselection,
   };
 }
 
@@ -143,6 +155,8 @@ export interface AdminListUsersParams {
   level?: string;
   department?: string;
   onboarded?: boolean;
+  /** When true, only return users whose stored department is not in the current DEPARTMENTS list */
+  staleOnly?: boolean;
 }
 
 export interface AdminUserListItem {
@@ -156,6 +170,12 @@ export interface AdminUserListItem {
   lastLoginWith: string | null;
   lastLoginAt: Date | null;
   createdAt: Date;
+  /**
+   * True when this user's stored department is no longer in the canonical
+   * DEPARTMENTS list — they need to re-pick on next login. Mirrors the
+   * same derived check in getUserProfile; no DB flag required.
+   */
+  departmentNeedsReselection: boolean;
   onboarding: {
     level: string;
     department: string;
@@ -191,7 +211,7 @@ export interface AdminUserListResult {
  * (one join, not one query per row).
  */
 export async function listUsersForAdmin(params: AdminListUsersParams): Promise<AdminUserListResult> {
-  const { page, limit, search, level, department, onboarded } = params;
+  const { page, limit, search, level, department, onboarded, staleOnly } = params;
 
   const where: Prisma.UserWhereInput = {};
 
@@ -215,13 +235,28 @@ export async function listUsersForAdmin(params: AdminListUsersParams): Promise<A
     };
   }
 
-  const [total, users] = await Promise.all([
+  // staleOnly forces the query to return only onboarded users (they must have
+  // an Onboarding row to have a department at all). The actual staleness check
+  // is a post-query in-memory filter against DEPARTMENTS — it's a derived
+  // value, not a DB column, so we can't push it into the WHERE clause.
+  if (staleOnly) {
+    // Merge with any existing onboarding filter rather than overwriting it.
+    where.onboarding = { ...(where.onboarding as object | undefined), is: { isNot: null } } as Prisma.UserWhereInput["onboarding"];
+  }
+
+  const [total, rawUsers] = await Promise.all([
     prisma.user.count({ where }),
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      skip: (page - 1) * limit,
-      take: limit,
+      // When staleOnly is active we over-fetch and post-filter, so we can't
+      // apply DB-level pagination accurately. Fetch the full result set for
+      // the base query and slice after the in-memory filter. For typical admin
+      // use (a handful of affected users per taxonomy update) this is
+      // acceptable; if the roster ever grows to tens of thousands, revisit
+      // with a raw query that computes staleness via NOT IN.
+      skip: staleOnly ? 0 : (page - 1) * limit,
+      take: staleOnly ? undefined : limit,
       select: {
         id: true,
         name: true,
@@ -246,25 +281,39 @@ export async function listUsersForAdmin(params: AdminListUsersParams): Promise<A
     }),
   ]);
 
+  // Compute the derived staleness flag for every user: their department is
+  // stale if they have an Onboarding row AND that department is no longer in
+  // the canonical DEPARTMENTS list. Mirrors getUserProfile exactly —
+  // no DB flag, purely derived.
+  const mapped: AdminUserListItem[] = rawUsers.map((u) => ({
+    id: u.id,
+    name: u.name,
+    username: u.username,
+    email: u.email,
+    picture: u.picture,
+    profilePicturePath: u.profilePicturePath,
+    emailVerified: u.email_verified,
+    lastLoginWith: u.last_login_with,
+    lastLoginAt: u.last_login_at,
+    createdAt: u.createdAt,
+    departmentNeedsReselection: u.onboarding
+      ? !DEPARTMENTS.includes(u.onboarding.department as (typeof DEPARTMENTS)[number])
+      : false,
+    onboarding: u.onboarding,
+  }));
+
+  // Apply the in-memory staleOnly filter and re-paginate if requested.
+  const filtered = staleOnly ? mapped.filter((u) => u.departmentNeedsReselection) : mapped;
+  const paginatedUsers = staleOnly ? filtered.slice((page - 1) * limit, page * limit) : filtered;
+  const effectiveTotal = staleOnly ? filtered.length : total;
+
   return {
-    users: users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      username: u.username,
-      email: u.email,
-      picture: u.picture,
-      profilePicturePath: u.profilePicturePath,
-      emailVerified: u.email_verified,
-      lastLoginWith: u.last_login_with,
-      lastLoginAt: u.last_login_at,
-      createdAt: u.createdAt,
-      onboarding: u.onboarding,
-    })),
+    users: paginatedUsers,
     pagination: {
       page,
       limit,
-      total,
-      totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+      total: effectiveTotal,
+      totalPages: effectiveTotal === 0 ? 0 : Math.ceil(effectiveTotal / limit),
     },
   };
 }
